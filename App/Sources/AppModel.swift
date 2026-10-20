@@ -15,10 +15,11 @@ final class AppModel {
     let flow: FlowController
     let log: EventLog
     let peers: PeerDirectory
+    let retry: AutoRetry
 
     init(session: DictationSession, outbox: Outbox, targets: TargetStore, client: ReceiverClient = ReceiverClient(),
          models: ParrotModelStore = ParrotModelStore(), ruleStore: RuleStore = RuleStore(defaults: .standard),
-         log: EventLog = EventLog(url: nil)) {
+         log: EventLog = EventLog(url: nil), phraseStore: PhraseStore = PhraseStore(defaults: .standard)) {
         self.log = log
         self.session = session
         self.outbox = outbox
@@ -27,7 +28,9 @@ final class AppModel {
         health = TargetHealth(service: delivery)
         delivery.log = log
         peers = PeerDirectory(service: delivery)
-        flow = FlowController(session: session, delivery: delivery, models: models, ruleStore: ruleStore, log: log)
+        retry = AutoRetry(service: delivery, log: log)
+        flow = FlowController(session: session, delivery: delivery, models: models, ruleStore: ruleStore, log: log,
+                              phraseStore: phraseStore)
         log.add(.app, "app started, \(BuildInfo().display)")
     }
 

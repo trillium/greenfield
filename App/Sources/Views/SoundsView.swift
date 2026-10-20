@@ -23,6 +23,15 @@ struct SoundsView: View {
                     NavigationLink("Edit rules (\(flow.rules.count))") { RulesView(flow: flow) }
                     ForEach(flow.rules.filter(\.enabled)) { Text($0.summary + " (\($0.action.title))").font(.footnote) }
                 }
+                Section {
+                    PhraseList(flow: flow)
+                } header: {
+                    Text("Spoken line-enders")
+                } footer: {
+                    Text("Saying one of these at the very end of what you dictate ends dictation and submits the text, without "
+                         + "the phrase. Matched on the last words only, ignoring case. A sentence that really ends with the phrase "
+                         + "will submit.")
+                }
                 Section("Model packs") {
                     ModelPackList(model: model, message: $message)
                     Button("Import a model pack…", systemImage: "square.and.arrow.down") { importing = true }
@@ -100,5 +109,27 @@ struct ModelPackList: View {
     private func remove(_ id: String) {
         do { try model.flow.models.remove(id) } catch { message = "\(error)" }
         refresh += 1
+    }
+}
+
+/// The spoken line-ender phrases: switch on and off, edit, add, remove.
+struct PhraseList: View {
+    let flow: FlowController
+    @State private var phrases: [PhraseStore.Phrase] = []
+
+    var body: some View {
+        Group {
+            ForEach($phrases) { $phrase in
+                HStack {
+                    Toggle("", isOn: $phrase.enabled).labelsHidden()
+                    TextField("Phrase", text: $phrase.text).textInputAutocapitalization(.never).autocorrectionDisabled()
+                }
+            }
+            .onDelete { phrases.remove(atOffsets: $0) }
+            Button("Add a phrase", systemImage: "plus") { phrases.append(PhraseStore.Phrase(text: "")) }
+            Button("Reset to defaults", systemImage: "arrow.counterclockwise", role: .destructive) { phrases = PhraseStore.defaults }
+        }
+        .onAppear { phrases = flow.phrases }
+        .onChange(of: phrases) { _, new in flow.setPhrases(new) }
     }
 }

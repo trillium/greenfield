@@ -15,6 +15,7 @@ struct ContentView: View {
         }
         .task { await model.session.prepareModel() }
         .task { model.flow.startDetector() }
+        .task { model.retry.start() }
         .onChange(of: scenePhase, initial: true) { _, phase in
             Task { await model.session.sceneChanged(foreground: phase == .active) }
         }

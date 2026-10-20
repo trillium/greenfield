@@ -156,6 +156,7 @@ final class SelfTest {
     func removeSelfTestTargets() {
         let leftovers = model.targets.targets.filter { $0.name == "Self test" }
         for target in leftovers { model.targets.remove(target.id) }
+        for item in model.outbox.items where item.targetName == "Self test" { model.outbox.remove(item.id) }
         if let first = model.targets.targets.first, model.targets.selected == nil { model.targets.select(first.id) }
     }
 

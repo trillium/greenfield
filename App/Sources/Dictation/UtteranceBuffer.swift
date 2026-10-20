@@ -70,6 +70,19 @@ struct UtteranceBuffer {
         return Utterance(pcm: pcm, peakDb: Self.peakDb(pcm))
     }
 
+    /// The audio held so far in the current hold (nil when not holding), for listening in while dictation is still going.
+    func heldSoFar() -> [Float]? {
+        guard let start = holdStart, holdEnd == nil, streamEnd > start else { return nil }
+        return Array(samples[(start - firstIndex)..<(streamEnd - firstIndex)])
+    }
+
+    /// True when the last `seconds` of `pcm` are all below `threshold` dB: a pause after speech.
+    static func endsQuiet(_ pcm: [Float], seconds: Double, below threshold: Float = -48) -> Bool {
+        let count = Int(seconds * AudioCapture.sampleRate)
+        guard pcm.count >= count, count > 0 else { return false }
+        return peakDb(Array(pcm[(pcm.count - count)...])) < threshold
+    }
+
     /// True when the utterance is too quiet to contain speech.
     func isSilent(_ utterance: Utterance) -> Bool { utterance.peakDb < config.silenceDb }
 

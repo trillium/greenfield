@@ -25,6 +25,7 @@ struct DictateView: View {
             .padding()
         }
         .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .bottom) { SubmitBar(model: model) }
         .task { await model.health.refreshAll() }
     }
 
@@ -73,6 +74,47 @@ struct DictateView: View {
         switch session.listen.status {
         case .interrupted(let reason), .gaveUp(let reason): return reason
         case .off, .listening, .backgrounded: return nil
+        }
+    }
+}
+
+/// Always visible under the text box: Submit sends the whole box to the active computer; Retry all resends what is queued.
+struct SubmitBar: View {
+    let model: AppModel
+
+    var body: some View {
+        let flow = model.flow
+        let queued = model.outbox.pending.count
+        VStack(spacing: 6) {
+            if queued > 0 {
+                HStack {
+                    Button("Retry all (\(queued))", systemImage: "arrow.clockwise") { Task { await model.delivery.resendAll() } }
+                        .buttonStyle(.bordered)
+                    Spacer()
+                    RetryNote(retry: model.retry)
+                }
+            }
+            Button { flow.submit() } label: {
+                Label("Submit to \(model.targets.selected?.name ?? "the computer")", systemImage: "paperplane.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent).controlSize(.large).disabled(!flow.canSubmit)
+        }
+        .padding(.horizontal).padding(.vertical, 8)
+        .background(.bar)
+    }
+}
+
+/// "Retrying by itself, next look in 20 s" while something is queued.
+struct RetryNote: View {
+    let retry: AutoRetry
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            if let next = retry.nextCheck {
+                Text("Retrying by itself, next check in \(max(0, Int(next.timeIntervalSince(context.date)))) s")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 }
@@ -187,8 +229,6 @@ struct TextBox: View {
             HStack {
                 Button("Clear", systemImage: "xmark.circle") { flow.text = "" }.disabled(flow.text.isEmpty)
                 Spacer()
-                Button("Submit", systemImage: "paperplane.fill") { flow.submit() }
-                    .buttonStyle(.borderedProminent).disabled(!flow.canSubmit)
             }
         }
     }

@@ -59,6 +59,13 @@ final class UtteranceGate: @unchecked Sendable {
         return true
     }
 
+    /// The audio of the dictation so far, or nil when not dictating.
+    func heldSoFar() -> [Float]? {
+        lock.lock()
+        defer { lock.unlock() }
+        return buffer.heldSoFar()
+    }
+
     /// Finishes an utterance whose tail never arrived (the microphone stopped), or returns nil.
     func flush() -> (UtteranceBuffer.Utterance, Bool)? {
         lock.lock()
@@ -112,6 +119,10 @@ final class DictationSession {
     var onTranscript: (@MainActor (String, Int) -> Void)?
     /// Diagnostics: microphone and model events as they happen.
     var onLog: (@MainActor (EventLog.Category, String) -> Void)?
+    /// Spoken line-enders: whether any are configured, and whether a transcript ends with one (so dictation can end by voice).
+    var lineEnderActive: (@MainActor () -> Bool)?
+    var lineEnderProbe: (@MainActor (String) -> Bool)?
+    private var monitor: Task<Void, Never>?
     /// Called when recording starts (true) or stops (false), whatever started it: the button, a sound, or a lost microphone.
     var onDictating: (@MainActor (Bool) -> Void)?
 
@@ -265,10 +276,34 @@ final class DictationSession {
         releaseGuard?.cancel()
         gate.begin(preRollSeconds: preRollSeconds)
         onDictating?(true)
+        startListeningForLineEnder()
+    }
+
+    /// While dictating, after each pause, transcribe what has been said so far; if it ends with a line-ender phrase, end dictation.
+    /// (Parakeet takes about 45 ms, so this costs nothing the person can feel.) The final transcript then carries the phrase to
+    /// the flow, which strips it and submits.
+    private func startListeningForLineEnder() {
+        monitor?.cancel()
+        guard lineEnderActive?() ?? false else { return }
+        monitor = Task { [weak self] in
+            var probed = 0
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(400))
+                guard let self, self.isHolding, let pcm = self.gate.heldSoFar() else { return }
+                guard pcm.count > probed + 8_000, UtteranceBuffer.endsQuiet(pcm, seconds: 0.7) else { continue }
+                probed = pcm.count
+                guard let text = try? await self.transcriber.transcribe(pcm), self.isHolding else { continue }
+                if self.lineEnderProbe?(text) == true {
+                    self.endDictation(tailSeconds: nil)
+                    return
+                }
+            }
+        }
     }
 
     private func endDictation(tailSeconds: Double?) {
         guard isHolding else { return }
+        monitor?.cancel()
         isHolding = false
         onDictating?(false)
         guard gate.end(tailSeconds: tailSeconds) else { return }
@@ -283,6 +318,7 @@ final class DictationSession {
 
     private func abortHold() {
         let wasHolding = isHolding
+        monitor?.cancel()
         isHolding = false
         releaseGuard?.cancel()
         if wasHolding { onDictating?(false) }

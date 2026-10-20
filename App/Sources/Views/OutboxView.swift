@@ -7,6 +7,14 @@ struct OutboxView: View {
     var body: some View {
         NavigationStack {
             List {
+                if !model.outbox.pending.isEmpty {
+                    Section {
+                        Button("Retry all (\(model.outbox.pending.count))", systemImage: "arrow.clockwise") {
+                            Task { await model.delivery.resendAll() }
+                        }
+                        RetryNote(retry: model.retry)
+                    }
+                }
                 if model.outbox.items.isEmpty {
                     ContentUnavailableView("Nothing yet", systemImage: "tray", description: Text("Transcripts you dictate are kept here."))
                 }

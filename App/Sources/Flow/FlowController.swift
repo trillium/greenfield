@@ -31,11 +31,16 @@ final class FlowController {
     let models: ParrotModelStore
     let log: EventLog
     private let ruleStore: RuleStore
+    private let phraseStore: PhraseStore
+    /// The spoken line-enders, editable in Sounds.
+    private(set) var phrases: [PhraseStore.Phrase]
     private var listener: SoundListener?
     private var observer: NSObjectProtocol?
 
     init(session: DictationSession, delivery: DeliveryService, models: ParrotModelStore, ruleStore: RuleStore,
-         log: EventLog = EventLog(url: nil)) {
+         log: EventLog = EventLog(url: nil), phraseStore: PhraseStore = PhraseStore(defaults: .standard)) {
+        self.phraseStore = phraseStore
+        phrases = phraseStore.load()
         self.log = log
         self.session = session
         self.delivery = delivery
@@ -45,6 +50,11 @@ final class FlowController {
         session.onDictating = { [weak self] on in self?.dictationChanged(on) }
         session.onTranscript = { [weak self] text, asrMs in self?.transcribed(text, asrMs: asrMs) }
         session.onLog = { [weak self] category, line in self?.log.add(category, line) }
+        session.lineEnderActive = { [weak self] in !(self?.enabledPhrases.isEmpty ?? true) }
+        session.lineEnderProbe = { [weak self] text in
+            guard let self else { return false }
+            return LineEnder.match(text, phrases: self.enabledPhrases) != nil
+        }
         observer = NotificationCenter.default.addObserver(forName: ParrotModelStore.didChange, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.startDetector() }
         }
@@ -55,6 +65,15 @@ final class FlowController {
     var state: FlowState { engine.state }
     var rules: [SoundRule] { engine.rules }
     var availableSounds: [String] { models.activePatterns() }
+    var enabledPhrases: [String] { phrases.filter { $0.enabled && !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }.map(\.text) }
+
+    func setPhrases(_ updated: [PhraseStore.Phrase]) {
+        phrases = updated
+        phraseStore.save(updated)
+    }
+
+    func resetPhrases() { setPhrases(PhraseStore.defaults) }
+
     var canSubmit: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     /// What the next sound will do, for the screen: the first enabled rule that applies in the current state.
@@ -176,6 +195,14 @@ final class FlowController {
 
     private func transcribed(_ words: String, asrMs: Int) {
         log.add(.dictation, "transcribed \(words.count) characters in \(asrMs) ms")
-        text = text.isEmpty ? words : text + " " + words
+        guard let ender = LineEnder.match(words, phrases: enabledPhrases) else {
+            text = text.isEmpty ? words : text + " " + words
+            return
+        }
+        // The phrase ends the line: it is not part of the text, and the box goes to the active computer like a second tongue click.
+        log.add(.dictation, "spoken line-ender \"\(ender.phrase)\" at the end of the transcript: submitting")
+        if !ender.remaining.isEmpty { text = text.isEmpty ? ender.remaining : text + " " + ender.remaining }
+        if session.isHolding { session.endHold() }
+        submit()
     }
 }
