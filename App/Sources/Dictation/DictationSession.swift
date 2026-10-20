@@ -71,7 +71,13 @@ final class UtteranceGate: @unchecked Sendable {
 @Observable
 final class DictationSession {
     enum ModelState: Equatable {
-        case notLoaded, loading(Double), ready, failed(String)
+        case notLoaded
+        /// Fetching the model for the first time (0...1).
+        case downloading(Double)
+        /// On this phone already; loading and preparing it.
+        case loading
+        case ready
+        case failed(String)
     }
 
     enum Notice: Equatable {
@@ -117,14 +123,19 @@ final class DictationSession {
     func prepareModel() async {
         switch model {
         case .notLoaded, .failed: break
-        case .loading, .ready: return
+        case .downloading, .loading, .ready: return
         }
-        model = .loading(0)
+        model = transcriber.isDownloaded() ? .loading : .downloading(0)
         do {
-            try await transcriber.prepare { [weak self] fraction in
+            try await transcriber.prepare { [weak self] update in
                 Task { @MainActor in
-                    guard let self, case .loading = self.model else { return }
-                    self.model = .loading(fraction)
+                    guard let self else { return }
+                    switch (update, self.model) {
+                    case (.downloading(let fraction), .downloading), (.downloading(let fraction), .loading):
+                        self.model = .downloading(fraction)
+                    case (.preparing, .downloading), (.preparing, .loading): self.model = .loading
+                    default: break
+                    }
                 }
             }
             model = .ready

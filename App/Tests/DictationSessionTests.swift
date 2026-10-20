@@ -5,10 +5,13 @@ private final class FakeTranscriber: SpeechTranscriber, @unchecked Sendable {
     var text = "Hello, world."
     var failure: Error?
     var prepareFailure: Error?
+    var downloaded = true
     private(set) var transcribed: [Int] = []
 
-    func prepare(progress: @escaping @Sendable (Double) -> Void) async throws {
-        progress(0.5)
+    func isDownloaded() -> Bool { downloaded }
+
+    func prepare(progress: @escaping @Sendable (SpeechModelProgress) -> Void) async throws {
+        progress(.downloading(0.5))
         if let prepareFailure { throw prepareFailure }
     }
 
@@ -33,6 +36,19 @@ final class DictationSessionTests: XCTestCase {
         XCTAssertEqual(session.model, .notLoaded)
         await session.prepareModel()
         XCTAssertEqual(session.model, .ready)
+    }
+
+    func testTheStateSaysWhetherTheModelIsDownloadedOrJustLoading() async {
+        let fake = FakeTranscriber()
+        fake.downloaded = false
+        let first = DictationSession(transcriber: fake)
+        let slow = Task { await first.prepareModel() }
+        for _ in 0..<50 where first.model == .notLoaded { try? await Task.sleep(for: .milliseconds(5)) }
+        await slow.value
+        XCTAssertEqual(first.model, .ready)
+        XCTAssertEqual(ModelStatusLine.text(for: .ready), "Speech model ready")
+        XCTAssertEqual(ModelStatusLine.text(for: .downloading(0.42)), "Downloading the speech model 42%")
+        XCTAssertTrue(ModelStatusLine.text(for: .loading).contains("already on this phone"))
     }
 
     func testAFailedModelCanBeRetried() async {

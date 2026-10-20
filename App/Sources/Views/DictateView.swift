@@ -10,6 +10,7 @@ struct DictateView: View {
         ScrollView {
             VStack(spacing: 16) {
                 TargetPicker(model: model)
+                ModelStatusLine(state: session.model)
                 StateBanner(flow: flow)
                 LastSoundLine(sound: flow.lastSound)
                 TextBox(flow: flow)
@@ -33,7 +34,6 @@ struct DictateView: View {
             if let detail = detail(session) {
                 Text(detail).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
-            if case .loading(let fraction) = session.model { ProgressView(value: fraction).padding(.horizontal, 40) }
             if session.micDenied || retryable(session) {
                 Button("Try the microphone again") { Task { await session.retryMicrophone() } }.buttonStyle(.bordered)
             }
@@ -49,7 +49,6 @@ struct DictateView: View {
     }
 
     private func headline(_ session: DictationSession) -> String {
-        if case .loading = session.model { return "Getting the speech model ready" }
         if case .failed = session.model { return "The speech model could not load" }
         if session.micDenied { return "Microphone access is off" }
         if session.isHolding { return "Listening…" }
@@ -63,11 +62,7 @@ struct DictateView: View {
     }
 
     private func detail(_ session: DictationSession) -> String? {
-        switch session.model {
-        case .loading: return "This happens once, and downloads about 0.5 GB. It stays on the phone."
-        case .failed(let message): return message
-        case .notLoaded, .ready: break
-        }
+        if case .failed(let message) = session.model { return message }
         if session.micDenied { return "Turn it on in Settings > Greenfield > Microphone." }
         switch session.notice {
         case .nothingHeard: return "Nothing was heard."
@@ -77,6 +72,53 @@ struct DictateView: View {
         switch session.listen.status {
         case .interrupted(let reason), .gaveUp(let reason): return reason
         case .off, .listening, .backgrounded: return nil
+        }
+    }
+}
+
+/// "Speech model ready", "Loading the speech model (already on this phone)" or "Downloading the speech model 42%".
+struct ModelStatusLine: View {
+    let state: DictationSession.ModelState
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Label(text, systemImage: icon).font(.footnote.weight(.medium)).foregroundStyle(color)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if case .downloading(let fraction) = state { ProgressView(value: fraction) }
+            if case .downloading = state {
+                Text("One time only: about 0.5 GB, kept on this phone. App updates keep it.")
+                    .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    static func text(for state: DictationSession.ModelState) -> String {
+        switch state {
+        case .notLoaded: return "Speech model: starting"
+        case .downloading(let fraction): return "Downloading the speech model \(Int((fraction * 100).rounded()))%"
+        case .loading: return "Loading the speech model (already on this phone)"
+        case .ready: return "Speech model ready"
+        case .failed: return "Speech model failed to load"
+        }
+    }
+
+    private var text: String { Self.text(for: state) }
+
+    private var icon: String {
+        switch state {
+        case .ready: return "checkmark.circle.fill"
+        case .failed: return "exclamationmark.triangle.fill"
+        case .downloading: return "arrow.down.circle"
+        case .notLoaded, .loading: return "hourglass"
+        }
+    }
+
+    private var color: Color {
+        switch state {
+        case .ready: return .green
+        case .failed: return .red
+        default: return .secondary
         }
     }
 }

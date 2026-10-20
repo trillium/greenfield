@@ -87,7 +87,14 @@ struct SelfTest {
     }
 
     private func waitForModel() async -> Bool {
+        let start = Date()
+        var last = ""
         for _ in 0..<1200 {
+            let now = ModelStatusLine.text(for: model.session.model)
+            if now != last {
+                say(String(format: "[%.1f s] %@", Date().timeIntervalSince(start), now))
+                last = now
+            }
             if model.session.isModelReady { return true }
             if case .failed(let message) = model.session.model {
                 say("model failed: \(message)")

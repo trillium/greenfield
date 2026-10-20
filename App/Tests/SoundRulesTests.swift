@@ -135,7 +135,8 @@ final class FlowControllerTests: XCTestCase {
 }
 
 private final class ScriptedTranscriber: SpeechTranscriber, @unchecked Sendable {
-    func prepare(progress: @escaping @Sendable (Double) -> Void) async throws {}
+    func isDownloaded() -> Bool { true }
+    func prepare(progress: @escaping @Sendable (SpeechModelProgress) -> Void) async throws {}
     func transcribe(_ samples: [Float]) async throws -> String { "Hello from the test." }
 }
 
