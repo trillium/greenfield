@@ -50,6 +50,8 @@ final class FlowController {
         }
     }
 
+    /// The detector is subscribed to the microphone's tap.
+    var isListening: Bool { listener != nil }
     var state: FlowState { engine.state }
     var rules: [SoundRule] { engine.rules }
     var availableSounds: [String] { models.activePatterns() }

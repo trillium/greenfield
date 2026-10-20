@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Observation
 
@@ -41,6 +42,32 @@ final class AppModel {
         return AppModel(session: session, outbox: Outbox(url: Outbox.standardURL), targets: targets,
                         log: EventLog(url: EventLog.standardURL))
     }
+
+    /// The facts the Health screen reports on, gathered now.
+    func healthInputs() -> HealthInputs {
+        var input = HealthInputs()
+        input.speechModel = session.model
+        input.speechModelOnDisk = session.modelOnDisk
+        switch AVAudioApplication.shared.recordPermission {
+        case .granted: input.microphonePermission = .granted
+        case .denied: input.microphonePermission = .denied
+        default: input.microphonePermission = .undetermined
+        }
+        input.microphoneStatus = session.listen.status
+        input.audioFlowing = session.audioFlowing
+        input.detectorModel = flow.modelName
+        input.detectorProblem = flow.detectorProblem
+        input.detectorListening = flow.isListening
+        input.tailnetConnected = Tailnet.isConnected()
+        input.computers = targets.targets.map { target in
+            HealthInputs.Computer(name: target.name, address: target.address, isActive: target.id == targets.selectedID,
+                                  hasKey: !(targets.key(for: target) ?? "").isEmpty, answer: health.answers[target.id])
+        }
+        input.queued = outbox.pending.count
+        return input
+    }
+
+    func healthReport() -> [HealthItem] { HealthReport.build(healthInputs()) }
 
     func resend(_ id: UUID) {
         Task { await delivery.deliver(id) }

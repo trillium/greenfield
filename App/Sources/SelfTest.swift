@@ -148,6 +148,11 @@ final class SelfTest {
             say("\(target.name) (\(target.address)): \(model.health.state(for: target).summary)")
             if borrowed { try? model.targets.save(target, key: "") }
         }
+        // The Health screen's own report, as the person would read it (computers without a key show as needing one).
+        for item in model.healthReport() {
+            say("HEALTH \(item.level == .ok ? "ok     " : item.level == .warning ? "warning" : "PROBLEM") \(item.title): \(item.detail)"
+                + (item.fix.map { " FIX: \($0)" } ?? ""))
+        }
     }
 
     /// Test runs add a computer called "Self test"; they never stay in the list a person sees.

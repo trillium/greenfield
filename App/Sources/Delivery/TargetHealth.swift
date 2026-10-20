@@ -24,6 +24,8 @@ final class TargetHealth {
     }
 
     private(set) var states: [UUID: State] = [:]
+    /// The last `GET /status` answer for each computer, for the Health screen.
+    private(set) var answers: [UUID: ReceiverClient.Health] = [:]
     private let service: DeliveryService
 
     init(service: DeliveryService) { self.service = service }
@@ -36,7 +38,9 @@ final class TargetHealth {
             return
         }
         states[target.id] = .checking
-        states[target.id] = Self.state(from: await service.health(of: target))
+        let answer = await service.health(of: target)
+        answers[target.id] = answer
+        states[target.id] = Self.state(from: answer)
     }
 
     func refreshAll() async {

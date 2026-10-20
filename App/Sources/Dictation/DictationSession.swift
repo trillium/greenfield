@@ -6,6 +6,14 @@ final class UtteranceGate: @unchecked Sendable {
     private let lock = NSLock()
     private var buffer: UtteranceBuffer
     private var onUtterance: (@Sendable (UtteranceBuffer.Utterance, Bool) -> Void)?
+    private var lastAudio: Date?
+
+    /// When the microphone last delivered audio, for the Health screen.
+    var lastAudioAt: Date? {
+        lock.lock()
+        defer { lock.unlock() }
+        return lastAudio
+    }
 
     init(config: UtteranceBuffer.Config = .init()) { buffer = UtteranceBuffer(config: config) }
 
@@ -18,6 +26,7 @@ final class UtteranceGate: @unchecked Sendable {
     /// Audio thread. Hands a finished utterance to the handler, outside the lock.
     func append(_ chunk: [Float]) {
         lock.lock()
+        lastAudio = Date()
         buffer.append(chunk)
         let finished = buffer.takeFinished()
         let silent = finished.map(buffer.isSilent) ?? false
@@ -116,6 +125,9 @@ final class DictationSession {
         }
     }
 
+    /// The microphone delivered audio in the last two seconds.
+    var audioFlowing: Bool { gate.lastAudioAt.map { Date().timeIntervalSince($0) < 2 } ?? false }
+    var modelOnDisk: Bool { transcriber.isDownloaded() }
     var isModelReady: Bool { model == .ready }
     var micReady: Bool { listen.isCapturing }
     var canHold: Bool { isModelReady && micReady && !isHolding }

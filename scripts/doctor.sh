@@ -30,6 +30,11 @@ command -v swiftlint >/dev/null 2>&1 && pass "swiftlint $(swiftlint --version)" 
 command -v shellcheck >/dev/null 2>&1 && pass "shellcheck present" || warn "shellcheck missing (brew install shellcheck); make check lints scripts with it"
 command -v gitleaks >/dev/null 2>&1 && pass "gitleaks present" || warn "gitleaks missing (brew install gitleaks); the pre-commit second-opinion scan is skipped"
 
+echo "== Sound detector (make core) =="
+for f in include/parrot.h device/libparrot_core.a sim/libparrot_core.a resources/parrot-model.bin; do
+  if [ -f "$ROOT/.parrot-core/$f" ]; then pass ".parrot-core/$f staged"; else fail ".parrot-core/$f missing: run 'make core' (needs the sibling parrot-app checkout)"; fi
+done
+
 echo "== Project identity (Config/Base.xcconfig) =="
 if is_placeholder "$APP_NAME"; then fail "APP_NAME unset/placeholder"; else pass "APP_NAME=$APP_NAME"; fi
 if is_placeholder "$BUNDLE_ID"; then signing "PRODUCT_BUNDLE_IDENTIFIER is unset or still com.example.* ($BUNDLE_ID)"; else pass "bundle id $BUNDLE_ID"; fi

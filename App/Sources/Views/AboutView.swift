@@ -1,7 +1,8 @@
 import SwiftUI
 
 struct AboutView: View {
-    let log: EventLog
+    let model: AppModel
+    var log: EventLog { model.log }
 
     var body: some View {
         NavigationStack {
@@ -12,7 +13,8 @@ struct AboutView: View {
                     LabeledContent("Where it runs", value: "On this phone")
                 }
                 Section("Support") {
-                    NavigationLink("Diagnostics") { DiagnosticsView(log: log) }
+                    NavigationLink("Health: is everything set up?") { HealthView(model: model) }
+                    NavigationLink("Diagnostics: recent events") { DiagnosticsView(log: log) }
                 }
                 Section("Licences") {
                     NavigationLink("Attribution") { AttributionView() }
