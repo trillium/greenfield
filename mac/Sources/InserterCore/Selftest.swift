@@ -20,7 +20,7 @@ private func sendFailure(_ id: String, _ title: String, _ r: InserterClient.Send
     switch r.httpStatus {
     case 401:
         return HealthCheck(id, title, .fail, detail: "the daemon rejected the selftest's credential",
-            why: "The selftest authenticates with the throwaway token the daemon writes at start-up, or with the key you passed on stdin. This daemon did not accept it: the key may be wrong, or an older daemon may not honour the token.",
+            why: "The selftest authenticates with the throwaway token the daemon writes at start-up, or with the key you passed on stdin. This daemon did not accept it: the key may be wrong, or an older daemon may not honour the token. " + keyFileNote,
             fix: "Update the daemon once with `make -C mac install` (then re-approve Accessibility if macOS asks), or run `greenfield-inserter selftest --key-stdin` and give it this Mac's key on stdin.")
     case 409:
         return HealthCheck(id, title, .fail, detail: "refused: secure input is on (HTTP 409)",

@@ -152,4 +152,26 @@ final class HealthTests: XCTestCase {
         let text = formatDoctor(label: "x", checks: all) + formatHealth(label: "x", checks: all)
         XCTAssertFalse(text.contains(secret))
     }
+
+    func testKeyFileNoteIsShownWhereKeysComeUp() {
+        XCTAssertTrue(keyFileNote.contains("hash")); XCTAssertTrue(keyFileNote.contains("macs show-key"))
+        // health and doctor output
+        let ok = checks(.ok(snap()))
+        XCTAssertTrue(formatHealth(label: "m", checks: ok).contains(keyFileNote))
+        XCTAssertTrue(formatDoctor(label: "m", checks: ok).contains(keyFileNote))
+        // a refused key (remote 401) carries it in the explanation
+        let refused = checks(.unauthorized, remote).first { $0.id == "key" }!
+        XCTAssertTrue(refused.why.contains(keyFileNote))
+        XCTAssertTrue(formatDoctor(label: "m", checks: checks(.unauthorized, remote)).contains("shown once"))
+        // peer check on a Mac that rejects our key
+        let mac = KnownMac(alias: "book", host: "h", key: "k")
+        let peer = peerChecks([MacReport(mac: mac, state: .unauthorized, name: nil, version: nil)], localVersion: "0.1.0")[0]
+        XCTAssertTrue(peer.why.contains(keyFileNote))
+        // host key-file check shows it too
+        XCTAssertTrue(formatDoctor(label: "m", checks: hostChecks(facts(), daemonExecutable: nil)).contains(keyFileNote))
+        // the daemon's own 401 and the client's reading of it say it too
+        XCTAssertTrue(InserterClient.interpretSend(httpStatus: 401, body: Data()).summary.contains("macs show-key"))
+        // and the note never leaks a key
+        XCTAssertFalse(keyFileNote.contains("sha256:"))
+    }
 }

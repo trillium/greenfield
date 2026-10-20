@@ -48,6 +48,10 @@ make -C mac permissions   # makes macOS show the Accessibility prompt
 make -C mac run           # or run in the foreground instead of installing
 ```
 
+**The key file is not the key.** `~/.config/greenfield-inserter/key` holds only a hash of the key, so sending its
+contents as `X-Dictation-Key` is refused with 401. The real key was shown once by `key create` and is kept by the
+Mac that ran `macs add` (`greenfield-inserter macs show-key ALIAS` there). `health` and `doctor` say this too.
+
 The key is generated randomly; only its SHA-256 is stored, in `~/.config/greenfield-inserter/key`
 (mode 0600, directory 0700), so it cannot be read back. `make key FORCE=--force` rotates it; the daemon
 picks the change up without a restart. Set `GREENFIELD_INSERTER_HOME` to use another directory.

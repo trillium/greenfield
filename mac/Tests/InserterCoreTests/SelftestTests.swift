@@ -48,6 +48,7 @@ final class SelftestTests: XCTestCase {
         XCTAssertTrue(fail(409)!.detail.contains("409")); XCTAssertTrue(fail(423)!.detail.contains("locked"))
         XCTAssertTrue(fail(503, "Accessibility is not approved")!.detail.contains("Accessibility"))
         XCTAssertTrue(fail(401)!.fix.contains("--key-stdin"))
+        XCTAssertTrue(fail(401)!.why.contains(keyFileNote))
         XCTAssertNotNil(fail(nil, "unreachable (x)"))
         XCTAssertEqual(fail(409)?.id, "text-send")
     }

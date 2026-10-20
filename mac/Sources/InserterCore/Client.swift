@@ -157,7 +157,7 @@ public enum InserterClient {
         let object = (try? JSONSerialization.jsonObject(with: body) as? [String: Any]) ?? [:]
         switch httpStatus {
         case 200: return SendResult(httpStatus: 200, summary: "inserted (\(object["method"] as? String ?? "?"))", inserted: true)
-        case 401: return SendResult(httpStatus: 401, summary: "wrong key for that Mac", inserted: false)
+        case 401: return SendResult(httpStatus: 401, summary: "wrong key for that Mac (the real key, not the key file's contents: `macs show-key ALIAS` on the Mac that ran `macs add`)", inserted: false)
         case 409: return SendResult(httpStatus: 409, summary: "secure input is on - nothing inserted", inserted: false)
         case 423: return SendResult(httpStatus: 423, summary: "screen is locked - nothing inserted", inserted: false)
         case 503:

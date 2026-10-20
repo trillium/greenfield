@@ -8,6 +8,9 @@ public enum InserterDefaults {
     }
 }
 
+/// Said wherever a key problem shows up, because pasting the key file's contents as the key gets a 401.
+public let keyFileNote = "The key file stores only a hash of the key. The real key was shown once at `key create` and is kept by the Mac that ran `macs add` (`greenfield-inserter macs show-key ALIAS` there); do not use the file's contents as the key."
+
 /// One yes/no fact about the setup. `why` and `fix` are only shown by `doctor`.
 public struct HealthCheck: Equatable {
     public enum Status: Equatable { case pass, fail, warn, skip }
@@ -108,7 +111,7 @@ public func snapshotChecks(_ outcome: SnapshotOutcome, subject: HealthSubject, l
     switch outcome {
     case .unauthorized:
         checks.append(HealthCheck("key", "Key accepted", .fail, detail: "that Mac rejected the saved key",
-            why: "Without the matching key every request is refused (HTTP 401), so nothing can be inserted.",
+            why: "Without the matching key every request is refused (HTTP 401), so nothing can be inserted. " + keyFileNote,
             fix: "Re-enter it here: `greenfield-inserter macs add \(alias) <host>` (key from `macs show-key` on the Mac that holds it). If lost: on that Mac `\(bin) key create --force`, then `macs add` again, and update the phone."))
         return checks + ["listening", "accessibility", "unlocked", "secure-input", "version"].map {
             HealthCheck($0, titleFor($0), .skip, detail: "not checked: key not accepted")
@@ -280,7 +283,7 @@ public func hostChecks(_ f: HostFacts, daemonExecutable: String?) -> [HealthChec
             why: "Other users on this Mac could list or replace files there.",
             fix: "`chmod 700 \(f.configDir)`."))
     } else {
-        out.append(HealthCheck("keyfile", "Key file present and private", .pass, detail: "mode 600 in a 700 directory"))
+        out.append(HealthCheck("keyfile", "Key file present and private", .pass, detail: "mode 600 in a 700 directory (holds a hash, not the key)"))
     }
 
     if let exe = daemonExecutable, !exe.isEmpty, f.binaryExecutable, exe != f.installedBinary {
@@ -298,7 +301,7 @@ public func peerChecks(_ reports: [MacReport], localVersion: String) -> [HealthC
         let title = "\(r.mac.alias) reachable from here"
         if r.state.needsAttention || !r.exposed.isEmpty {
             return HealthCheck(id, title, .fail, detail: r.state.label + (r.exposed.isEmpty ? "" : "; listening outside the tailnet"),
-                why: "The phone, or this Mac, could not use \(r.mac.alias) as an input target right now.",
+                why: "The phone, or this Mac, could not use \(r.mac.alias) as an input target right now." + (r.state == .unauthorized ? " " + keyFileNote : ""),
                 fix: "`greenfield-inserter macs doctor` shows what to fix on \(r.mac.alias); `tailscale ping \(r.mac.host)` tests the network path.")
         }
         return HealthCheck(id, title, .pass, detail: "\(r.mac.host):\(r.mac.port) \(r.state.label)")
@@ -318,6 +321,7 @@ public func formatHealth(label: String, checks: [HealthCheck]) -> String {
     for c in checks {
         lines.append("  \(mark(c.status))  \(c.title)" + (c.detail.isEmpty ? "" : " - \(c.detail)"))
     }
+    if checks.contains(where: { $0.id == "key" || $0.id == "keyfile" }) { lines.append("  note: " + keyFileNote) }
     return lines.joined(separator: "\n")
 }
 
@@ -333,5 +337,6 @@ public func formatDoctor(label: String, checks: [HealthCheck]) -> String {
         lines.append("        why:   \(c.why)")
         lines.append("        fix:   \(c.fix)")
     }
+    if checks.contains(where: { $0.id == "key" || $0.id == "keyfile" }) { lines += ["", "  note: " + keyFileNote] }
     return lines.joined(separator: "\n")
 }

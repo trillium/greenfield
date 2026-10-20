@@ -84,7 +84,7 @@ public final class RequestHandler {
         }
         switch check {
         case .ok: break
-        case .mismatch: return .error(401, "unauthorized", "missing or wrong X-Dictation-Key")
+        case .mismatch: return .error(401, "unauthorized", "missing or wrong X-Dictation-Key (the key file holds only a hash; use the key shown once by `key create`)")
         case .notConfigured:
             return .error(503, "key_not_configured", "no key set on this Mac; run `greenfield-inserter key create`")
         }
