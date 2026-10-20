@@ -10,8 +10,8 @@ struct TargetsView: View {
         NavigationStack {
             List {
                 if model.targets.targets.isEmpty {
-                    ContentUnavailableView("No Macs yet", systemImage: "desktopcomputer",
-                                           description: Text("Add the tailnet name or address of a Mac that runs a text receiver."))
+                    ContentUnavailableView("No computers yet", systemImage: "desktopcomputer",
+                                           description: Text("Add the tailnet name or address of a computer that runs the input agent."))
                 }
                 ForEach(model.targets.targets) { target in
                     TargetRow(target: target, model: model)
@@ -22,16 +22,17 @@ struct TargetsView: View {
                 }
                 Section {
                     Text("""
-                    Text goes to exactly one Mac: the selected one. Each Mac has its own key. Use the Mac's tailnet name \
-                    (for example macbook.your-tailnet.ts.net), a short name, or its 100.x tailnet address, optionally with :port \
-                    (default 7788). The phone must be connected to the tailnet (Tailscale on).
+                    Text goes to exactly one computer: the active one (tap to choose). Each computer has its own key; on the \
+                    computer, `greenfield-inserter macs show-key <name>` shows it. Use the tailnet name \
+                    (for example macbook.your-tailnet.ts.net), a short name, or the 100.x address, optionally with :port \
+                    (default 47821). The phone must be connected to the tailnet (Tailscale on).
                     """).font(.footnote).foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("Macs")
+            .navigationTitle("Computers")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Add a Mac", systemImage: "plus") { adding = true }
+                    Button("Add a computer", systemImage: "plus") { adding = true }
                 }
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Check", systemImage: "arrow.clockwise") { Task { await model.health.refreshAll() } }
@@ -39,7 +40,12 @@ struct TargetsView: View {
             }
             .sheet(isPresented: $adding) { TargetEditView(model: model, target: nil) }
             .sheet(item: $editing) { TargetEditView(model: model, target: $0) }
-            .task { await model.health.refreshAll() }
+            .task {
+                while !Task.isCancelled {
+                    await model.health.refreshAll()
+                    try? await Task.sleep(for: .seconds(15))
+                }
+            }
         }
     }
 }
@@ -84,7 +90,7 @@ struct TargetEditView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Mac") {
+                Section("Computer") {
                     TextField("Name", text: $name)
                     TextField("Tailnet name or address", text: $address)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
@@ -103,7 +109,7 @@ struct TargetEditView: View {
                     if let failure { Text(failure).font(.footnote).foregroundStyle(.red) }
                 }
             }
-            .navigationTitle(target == nil ? "Add a Mac" : "Edit Mac")
+            .navigationTitle(target == nil ? "Add a computer" : "Edit computer")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -132,10 +138,10 @@ struct TargetEditView: View {
         let candidate = draft
         let health = await model.delivery.health(of: candidate, key: key.isEmpty ? nil : key)
         testResult = switch health {
-        case .ready(let name, let locked, let secure):
-            ["Reachable" + (name.isEmpty ? "" : ": \(name)"), locked ? "The Mac is locked." : nil,
-             secure ? "A password field is focused." : nil].compactMap { $0 }.joined(separator: ". ")
+        case .ready(let status):
+            TargetHealth.state(from: .ready(status)).summary + (status.name.isEmpty ? "" : ": \(status.name)")
         case .wrongKey: "Reachable, but the key is wrong."
+        case .keyNotSetOnMac: "Reachable, but that computer has no key set yet."
         case .incompatible(let message), .unreachable(let message): message
         }
     }

@@ -13,4 +13,7 @@ MARKETING_VERSION = 0.0.0
 CURRENT_PROJECT_VERSION = 1
 #include? "Version.xcconfig"
 
+// Computers the app starts with, "name=tailnet-address name=tailnet-address" (no keys). Set it in the gitignored Local.xcconfig.
+GREENFIELD_PRESET_COMPUTERS =
+
 #include? "Local.xcconfig"

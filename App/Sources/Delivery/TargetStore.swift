@@ -24,6 +24,20 @@ final class TargetStore {
         }
     }
 
+    /// Adds the computers named in the build's `GreenfieldPresetComputers` setting ("name=address name=address"), once, without keys.
+    /// Removing one later sticks: the presets are not re-added.
+    func seedPresets(_ spec: String?, flag: String = "targets.presetsSeeded") {
+        guard let spec, !defaults.bool(forKey: flag) else { return }
+        for pair in spec.split(separator: " ") {
+            let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
+            guard parts.count == 2, !targets.contains(where: { $0.address == parts[1] }) else { continue }
+            targets.append(MacTarget(name: parts[0], address: parts[1]))
+        }
+        if selectedID == nil { selectedID = targets.first?.id }
+        defaults.set(true, forKey: flag)
+        persist()
+    }
+
     var selected: MacTarget? { targets.first { $0.id == selectedID } }
 
     func key(for target: MacTarget) -> String? { keys.key(for: target.id) }

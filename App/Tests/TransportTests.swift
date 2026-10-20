@@ -116,7 +116,7 @@ final class SocketTransportTests: XCTestCase {
     func testNothingListeningIsUnreachableNotAHang() async {
         let client = ReceiverClient(addressTransport: SocketTransport(timeout: 3), tailnetConnected: { true })
         let (outcome, _) = await client.send(id: UUID(), text: "x", to: URL(string: "http://127.0.0.1:1")!, key: nil)
-        guard case .unreachable = outcome else { return XCTFail("\(outcome)") }
+        XCTAssertEqual(outcome, .unreachable("The computer could not be reached (is its input agent running?)."))
     }
 
     func testResponseParsing() {

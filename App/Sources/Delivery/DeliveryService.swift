@@ -21,7 +21,7 @@ final class DeliveryService {
     func deliver(_ id: UUID) async -> ReceiverClient.SendOutcome? {
         guard let item = outbox.item(id), item.status == .pending, !inFlight.contains(id) else { return nil }
         guard let target = targets.selected, let base = target.baseURL else {
-            outbox.markFailed(id, reason: "No Mac is selected. Choose one in the Macs tab, then resend.")
+            outbox.markFailed(id, reason: "No computer is selected. Choose one in the Computers tab, then resend.")
             return nil
         }
         inFlight.insert(id)

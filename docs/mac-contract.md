@@ -1,47 +1,45 @@
-# Mac receiver contract (version 1.0)
+# Mac input agent: what the phone speaks
 
-What the phone sends and what a Mac-side receiver (the "inserter") must answer. The inserter itself, the part that types the text at the cursor, is a separate project. `tools/stub-receiver/receiver.py` implements this contract without inserting anything, so the phone app can be built and tested against it.
-
-Contract versioning follows `docs/versioning.md`: a breaking change bumps the contract MAJOR and the app MAJOR together.
+The phone sends text to a small agent on each Mac, `greenfield-inserter` (its own project; protocol and setup in its `mac/README.md`), which inserts the text at the cursor of the focused app. This page is the phone's side: which parts of that API the app uses and how it reads the answers. `tools/stub-receiver/receiver.py` speaks the same API without inserting anything, for tests.
 
 ## Transport and trust
-- Plain HTTP over a private network (a Tailscale tailnet). The phone allows plain http to `*.ts.net` names (subdomains included) and local short names through App Transport Security (see `App/Resources/AppInfo.plist`), and reaches 100.x tailnet addresses with a plain TCP transport (`HTTPTransport.swift`); there is no blanket exception. Before sending to a tailnet name or address the phone checks that it is connected to the tailnet and says so if it is not. Never expose a receiver to the public internet.
-- One receiver per Mac, each with its own secret key. The phone keeps a list of Macs (name, address, key); the key is stored in the iOS Keychain, never in preferences or logs.
-- The key travels in the `X-Dictation-Key` request header. It is never put in a URL.
+- Port `47821`. Plain HTTP over the tailnet; the trust boundary is tailnet membership plus a per-computer key in the `X-Dictation-Key` header (never in a URL, a log or the repository). Each computer has its own key; the app keeps them in the iPhone Keychain, this device only.
+- iOS App Transport Security allows plain http to `*.ts.net` (subdomains included) and to local short names; there is no blanket exception. 100.x tailnet addresses are sent over a plain TCP transport (`HTTPTransport.swift`) because ATS cannot allow an address range. Before sending to a tailnet name or address the app checks that the phone is on the tailnet and says so if it is not.
 - Audio never leaves the phone. Only text is sent.
 
-## `POST /text`
-Insert text at the cursor of the Mac's focused field.
-
-Request: `Content-Type: application/json`, body at most 4096 bytes.
-```json
-{ "id": "6F1C2E0A-5B7D-4E8B-9C41-0A2D3B4C5D6E", "text": "Hello, world." }
-```
-- `id`: a UUID the phone generates once per utterance and reuses on every resend.
-- `text`: UTF-8. The receiver normalises to NFC, strips control characters (including newlines and tabs), and rejects the request if nothing is left. The phone sends one line; there is never an Enter keystroke in v1.
-
-Responses (JSON body, `Content-Type: application/json`):
-
-| Status | Body | Meaning |
-|---|---|---|
-| 200 | `{"ok":true,"status":"inserted","id":"...","ms":12,"duplicate":false}` | Inserted. `ms` is the Mac-side time. |
-| 200 | `{"ok":true,"status":"inserted","id":"...","duplicate":true}` | This `id` was already inserted (the receiver remembers the last 100); nothing was typed again. Safe to resend. |
-| 401 | `{"ok":false,"error":"bad_key"}` | Missing or wrong key. |
-| 409 | `{"ok":false,"error":"secure_input"}` | A password field or other secure input is focused; nothing inserted. |
-| 413 | `{"ok":false,"error":"too_large"}` | Body over 4096 bytes. |
-| 422 | `{"ok":false,"error":"invalid_text"}` | Not JSON, no `id`/`text`, or text empty after sanitising. |
-| 423 | `{"ok":false,"error":"locked"}` | The Mac's session is locked; nothing inserted. |
-| 429 | `{"ok":false,"error":"rate_limited"}` | Too many requests; retry later. |
-
-Only a 200 means the text is on the Mac. Every other outcome keeps the transcript in the phone's outbox, where it can be resent with the same `id`. A request that times out is also kept: it may or may not have arrived, and the `id` makes the resend safe.
-
 ## `GET /status`
-Used for the reachability dot beside each Mac. Needs the key header like every other route.
-```json
-{ "ok": true, "contract": "1.0", "name": "MacBook", "locked": false, "secure_input": false,
-  "frontmost_bundle_id": "com.apple.TextEdit", "idle_seconds": 3.2 }
-```
-`contract` is `MAJOR.MINOR`; the phone refuses a receiver whose MAJOR it does not know. A 401 here shows the Mac as reachable with a wrong key.
+Used for the status line and dot beside each computer. The app reads `name`, `version`, `screen_locked`, `secure_input`, `accessibility` and `inserted_count`:
 
-## Target selection
-Exactly one Mac per utterance, the one selected on the phone. The phone never broadcasts and never falls back to another Mac when the selected one fails.
+| Answer | Shown as |
+|---|---|
+| 200, everything fine | green: "Ready (agent <version>)" |
+| 200, `accessibility` false | orange: needs Accessibility approval on that computer |
+| 200, `screen_locked` | orange: ready, but its screen is locked |
+| 200, `secure_input` | orange: ready, but a password field is focused |
+| 401 | orange: wrong key |
+| 503 `key_not_configured` | orange: no key set on that computer yet |
+| no answer | red: the reason (not on the tailnet, unreachable, timed out) |
+
+A computer with no key saved on the phone is shown as "Enter this computer's key" and is not contacted.
+
+## `POST /text`
+```json
+{ "id": "6F1C2E0A-5B7D-4E8B-9C41-0A2D3B4C5D6E", "text": "Hello, world.", "source": "greenfield" }
+```
+`id` is generated once per submitted text and reused on every resend; the agent answers a repeat with `200` and `"duplicate": true` and types nothing. The phone sends one line per submit, up to 256 KiB.
+
+| Status / `error` | Meaning in the app |
+|---|---|
+| 200 | sent (a duplicate counts as sent) |
+| 401 `unauthorized` | the key is wrong |
+| 503 `key_not_configured` | that computer has no key yet |
+| 503 `accessibility_not_granted` | the agent needs Accessibility approval |
+| 409 `secure_input` | a password field is focused; nothing typed |
+| 423 `screen_locked` | the screen is locked; nothing typed |
+| 400 `bad_request`, 413 `too_large`, 500 `insert_failed` | refused, with a message |
+| no answer or a timeout | unreachable; the text may or may not have arrived, and the id makes a resend safe |
+
+Only a 200 counts as delivered. Everything else keeps the text in the outbox, where it can be sent again with the same `id`.
+
+## Which computer
+Exactly one computer per submit: the active one, chosen in the Computers tab. The phone never broadcasts and never falls back to another computer when the active one fails.

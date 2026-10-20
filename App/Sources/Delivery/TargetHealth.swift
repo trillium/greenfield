@@ -6,15 +6,17 @@ import Foundation
 final class TargetHealth {
     enum State: Equatable {
         case unknown, checking
-        case ready, notice(String), wrongKey, incompatible(String), unreachable(String)
+        case ready(ReceiverClient.MacStatus), notice(String), noKey, wrongKey, keyNotSetOnMac, incompatible(String), unreachable(String)
 
         var summary: String {
             switch self {
             case .unknown: return "Not checked"
             case .checking: return "Checking"
-            case .ready: return "Ready"
+            case .ready(let status): return status.version.isEmpty ? "Ready" : "Ready (agent \(status.version))"
             case .notice(let message): return message
+            case .noKey: return "Enter this computer's key"
             case .wrongKey: return "Wrong key"
+            case .keyNotSetOnMac: return "No key set on that computer yet"
             case .incompatible(let message): return message
             case .unreachable(let message): return message
             }
@@ -29,6 +31,10 @@ final class TargetHealth {
     func state(for target: MacTarget) -> State { states[target.id] ?? .unknown }
 
     func refresh(_ target: MacTarget) async {
+        guard let key = service.targets.key(for: target), !key.isEmpty else {
+            states[target.id] = .noKey
+            return
+        }
         states[target.id] = .checking
         states[target.id] = Self.state(from: await service.health(of: target))
     }
@@ -39,11 +45,13 @@ final class TargetHealth {
 
     static func state(from health: ReceiverClient.Health) -> State {
         switch health {
-        case .ready(_, let locked, let secure):
-            if locked { return .notice("Ready, but the Mac is locked") }
-            if secure { return .notice("Ready, but a password field is focused") }
-            return .ready
+        case .ready(let status):
+            if !status.accessibility { return .notice("Needs Accessibility approval on that computer") }
+            if status.locked { return .notice("Ready, but its screen is locked") }
+            if status.secureInput { return .notice("Ready, but a password field is focused") }
+            return .ready(status)
         case .wrongKey: return .wrongKey
+        case .keyNotSetOnMac: return .keyNotSetOnMac
         case .incompatible(let message): return .incompatible(message)
         case .unreachable(let message): return .unreachable(message)
         }

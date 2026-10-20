@@ -207,7 +207,7 @@ final class EndToEndFlowTests: XCTestCase {
         flow.heard([event("tongue-click", 5.0)])
         for _ in 0..<100 where outbox.items.first?.lastError == nil { try await Task.sleep(for: .milliseconds(20)) }
         XCTAssertEqual(outbox.items.first?.status, .pending)
-        XCTAssertTrue(outbox.items.first?.lastError?.contains("No Mac") ?? false)
+        XCTAssertTrue(outbox.items.first?.lastError?.contains("No computer") ?? false)
     }
 
     func testHoldButtonDrivesTheSameState() async throws {

@@ -24,8 +24,10 @@ final class AppModel {
     }
 
     static func live() -> AppModel {
-        AppModel(session: DictationSession(transcriber: ParakeetTranscriber()), outbox: Outbox(url: Outbox.standardURL),
-                 targets: TargetStore(keys: KeychainKeyStore()))
+        let targets = TargetStore(keys: KeychainKeyStore())
+        targets.seedPresets(Bundle.main.object(forInfoDictionaryKey: "GreenfieldPresetComputers") as? String)
+        return AppModel(session: DictationSession(transcriber: ParakeetTranscriber()), outbox: Outbox(url: Outbox.standardURL),
+                        targets: targets)
     }
 
     func resend(_ id: UUID) {

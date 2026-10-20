@@ -13,37 +13,53 @@ struct ReceiverClient: Sendable {
     }
 
     enum Refusal: String, Equatable, Sendable {
-        case badKey = "bad_key"
+        case badKey = "unauthorized"
+        case keyNotConfigured = "key_not_configured"
         case secureInput = "secure_input"
-        case locked
-        case invalidText = "invalid_text"
+        case locked = "screen_locked"
+        case needsAccessibility = "accessibility_not_granted"
+        case invalidText = "bad_request"
         case tooLarge = "too_large"
-        case rateLimited = "rate_limited"
+        case insertFailed = "insert_failed"
         case other
 
         var message: String {
             switch self {
-            case .badKey: return "The key for this Mac is wrong."
-            case .secureInput: return "A password field is focused on the Mac."
-            case .locked: return "The Mac is locked."
-            case .invalidText: return "The Mac rejected the text."
-            case .tooLarge: return "The text is too long for the Mac to accept."
-            case .rateLimited: return "The Mac is rate limiting requests. Try again in a moment."
-            case .other: return "The Mac refused the text."
+            case .badKey: return "The key for this computer is wrong."
+            case .keyNotConfigured: return "No key is set on that computer yet."
+            case .secureInput: return "A password field is focused on the computer."
+            case .locked: return "The computer's screen is locked."
+            case .needsAccessibility: return "The computer's input agent needs Accessibility approval."
+            case .invalidText: return "The computer rejected the text."
+            case .tooLarge: return "The text is too long for the computer to accept."
+            case .insertFailed: return "The computer could not insert the text."
+            case .other: return "The computer refused the text."
             }
         }
     }
 
-    /// What `GET /status` showed.
+    /// What `GET /status` reported.
+    struct MacStatus: Equatable, Sendable {
+        var name = ""
+        var version = ""
+        var locked = false
+        var secureInput = false
+        var accessibility = true
+        var insertedCount = 0
+    }
+
     enum Health: Equatable, Sendable {
-        case ready(name: String, locked: Bool, secureInput: Bool)
+        case ready(MacStatus)
         case wrongKey
+        /// The Mac answered 503 `key_not_configured`: its agent has no key yet.
+        case keyNotSetOnMac
         case incompatible(String)
         case unreachable(String)
     }
 
     static let supportedContractMajor = 1
-    static let maxBody = 4096
+    /// The agent accepts up to 256 KiB per text.
+    static let maxBody = 262_144
 
     /// For names. Tailnet addresses (100.x) go through `addressTransport`, which ATS does not govern.
     var transport: HTTPTransport
@@ -74,7 +90,8 @@ struct ReceiverClient: Sendable {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let key, !key.isEmpty { request.setValue(key, forHTTPHeaderField: "X-Dictation-Key") }
-        guard let body = try? JSONSerialization.data(withJSONObject: ["id": id.uuidString, "text": text]), body.count <= Self.maxBody else {
+        let payload: [String: String] = ["id": id.uuidString, "text": text, "source": "greenfield"]
+        guard let body = try? JSONSerialization.data(withJSONObject: payload), body.count <= Self.maxBody else {
             return (.refused(.tooLarge), 0)
         }
         request.httpBody = body
@@ -105,39 +122,39 @@ struct ReceiverClient: Sendable {
             return .delivered(duplicate: json["duplicate"] as? Bool ?? false, macMs: json["ms"] as? Int)
         }
         if let error = json["error"] as? String, let refusal = Refusal(rawValue: error) { return .refused(refusal) }
-        switch status {
-        case 401: return .refused(.badKey)
-        case 409: return .refused(.secureInput)
-        case 413: return .refused(.tooLarge)
-        case 422: return .refused(.invalidText)
-        case 423: return .refused(.locked)
-        case 429: return .refused(.rateLimited)
-        case 200: return .unreachable("The Mac answered 200 without an ok body: it is not a text receiver.")
-        default: return .unreachable("The Mac answered HTTP \(status).")
-        }
+        let byStatus: [Int: Refusal] = [401: .badKey, 409: .secureInput, 413: .tooLarge, 423: .locked, 400: .invalidText, 422: .invalidText,
+                                        503: .needsAccessibility, 500: .insertFailed]
+        if let refusal = byStatus[status] { return .refused(refusal) }
+        if status == 200 { return .unreachable("The computer answered 200 without an ok body: it is not a text receiver.") }
+        return .unreachable("The computer answered HTTP \(status).")
     }
 
     static func interpretHealth(status: Int, data: Data) -> Health {
-        if status == 401 { return .wrongKey }
         let object = try? JSONSerialization.jsonObject(with: data)
-        guard status == 200, let json = object as? [String: Any], json["ok"] as? Bool == true else {
+        let json = object as? [String: Any] ?? [:]
+        if status == 401 { return .wrongKey }
+        if status == 503, json["error"] as? String == "key_not_configured" { return .keyNotSetOnMac }
+        guard status == 200, json["ok"] as? Bool == true else {
             return .unreachable("HTTP \(status) from /status: not a text receiver.")
         }
-        let contract = json["contract"] as? String ?? "?"
-        guard let major = Int(contract.split(separator: ".").first ?? ""), major == supportedContractMajor else {
-            return .incompatible("Receiver speaks contract \(contract); this app speaks \(supportedContractMajor).x.")
+        // An agent that states a contract version must be one this app knows; the current agent states none.
+        if let contract = json["contract"] as? String, Int(contract.split(separator: ".").first ?? "") != supportedContractMajor {
+            return .incompatible("The computer speaks contract \(contract); this app speaks \(supportedContractMajor).x.")
         }
-        return .ready(name: json["name"] as? String ?? "", locked: json["locked"] as? Bool ?? false,
-                      secureInput: json["secure_input"] as? Bool ?? false)
+        return .ready(MacStatus(name: json["name"] as? String ?? "", version: json["version"] as? String ?? "",
+                                locked: json["screen_locked"] as? Bool ?? json["locked"] as? Bool ?? false,
+                                secureInput: json["secure_input"] as? Bool ?? false,
+                                accessibility: json["accessibility"] as? Bool ?? true,
+                                insertedCount: json["inserted_count"] as? Int ?? 0))
     }
 
     static func describe(_ error: Error) -> String {
         guard let urlError = error as? URLError else { return error.localizedDescription }
         switch urlError.code {
-        case .timedOut: return "The Mac did not answer in time."
+        case .timedOut: return "The computer did not answer in time."
         case .notConnectedToInternet: return "The phone has no network connection."
-        case .cannotFindHost, .dnsLookupFailed: return "The Mac's name could not be found."
-        case .cannotConnectToHost, .networkConnectionLost: return "The Mac could not be reached (is its receiver running?)."
+        case .cannotFindHost, .dnsLookupFailed: return "The computer's name could not be found."
+        case .cannotConnectToHost, .networkConnectionLost: return "The computer could not be reached (is its input agent running?)."
         case .appTransportSecurityRequiresSecureConnection: return "Blocked: plain http is only allowed to *.ts.net and local hosts."
         default: return urlError.localizedDescription
         }

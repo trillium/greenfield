@@ -49,7 +49,7 @@ final class DeliveryServiceTests: XCTestCase {
     }
 
     func testARefusalIsExplainedAndKeepsTheText() async throws {
-        StubURLProtocol.install { _ in (423, json(["ok": false, "error": "locked"])) }
+        StubURLProtocol.install { _ in (423, json(["ok": false, "error": "screen_locked"])) }
         let rig = try makeService()
         let (service, outbox) = (rig.service, rig.outbox)
         let id = outbox.add(text: "x").id
@@ -66,7 +66,7 @@ final class DeliveryServiceTests: XCTestCase {
         let outcome = await service.deliver(id)
         XCTAssertNil(outcome)
         XCTAssertEqual(outbox.item(id)?.status, .pending)
-        XCTAssertTrue(outbox.item(id)?.lastError?.contains("No Mac") ?? false)
+        XCTAssertTrue(outbox.item(id)?.lastError?.contains("No computer") ?? false)
         XCTAssertTrue(StubURLProtocol.requests.isEmpty)
     }
 
@@ -110,7 +110,7 @@ final class DeliveryServiceTests: XCTestCase {
         let newest = outbox.add(text: "newest").id
         let counter = Counter()
         StubURLProtocol.install { _ in
-            counter.increment() == 2 ? (423, json(["ok": false, "error": "locked"])) : (200, json(["ok": true]))
+            counter.increment() == 2 ? (423, json(["ok": false, "error": "screen_locked"])) : (200, json(["ok": true]))
         }
         await service.resendAll()
         XCTAssertEqual(outbox.item(older)?.status, .sent)
@@ -120,18 +120,27 @@ final class DeliveryServiceTests: XCTestCase {
     }
 
     func testHealthUsesTheSavedKey() async throws {
-        StubURLProtocol.install { _ in (200, json(["ok": true, "contract": "1.0", "name": "MacBook"])) }
+        StubURLProtocol.install { _ in (200, json(["ok": true, "name": "MacBook"])) }
         let rig = try makeService()
         let (service, store) = (rig.service, rig.store)
         let health = await service.health(of: try XCTUnwrap(store.selected))
-        XCTAssertEqual(health, .ready(name: "MacBook", locked: false, secureInput: false))
+        XCTAssertEqual(health, .ready(ReceiverClient.MacStatus(name: "MacBook")))
         XCTAssertEqual(StubURLProtocol.requests.first?.value(forHTTPHeaderField: "X-Dictation-Key"), "key-MacBook")
     }
 
     func testHealthDotStates() {
         XCTAssertEqual(TargetHealth.state(from: .wrongKey), .wrongKey)
-        XCTAssertEqual(TargetHealth.state(from: .ready(name: "", locked: false, secureInput: false)), .ready)
-        if case .notice = TargetHealth.state(from: .ready(name: "", locked: true, secureInput: false)) {} else { XCTFail("locked") }
+        let plain = ReceiverClient.MacStatus(name: "x", version: "0.1.0")
+        XCTAssertEqual(TargetHealth.state(from: .ready(plain)), .ready(plain))
+        var locked = plain
+        locked.locked = true
+        if case .notice = TargetHealth.state(from: .ready(locked)) {} else { XCTFail("locked") }
+        var unapproved = plain
+        unapproved.accessibility = false
+        if case .notice(let message) = TargetHealth.state(from: .ready(unapproved)) {
+            XCTAssertTrue(message.contains("Accessibility"))
+        } else { XCTFail("accessibility") }
+        XCTAssertEqual(TargetHealth.state(from: .keyNotSetOnMac), .keyNotSetOnMac)
         if case .unreachable = TargetHealth.state(from: .unreachable("x")) {} else { XCTFail("unreachable") }
     }
 }

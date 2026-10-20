@@ -58,7 +58,7 @@ class ReceiverTests(unittest.TestCase):
 
     def test_size_cap(self):
         self.start()
-        status, body = self.call("/text", {"id": "big", "text": "x" * 5000})
+        status, body = self.call("/text", {"id": "big", "text": "x" * (receiver.MAX_BODY + 10)})
         self.assertEqual((status, body["error"]), (413, "too_large"))
 
     def test_refusal_states(self):
@@ -68,16 +68,11 @@ class ReceiverTests(unittest.TestCase):
         self.start(secure_input=True)
         self.assertEqual(self.call("/text", {"id": "b", "text": "x"})[0], 409)
 
-    def test_rate_limit(self):
-        self.start()
-        statuses = [self.call("/text", {"id": f"r{i}", "text": "x"})[0] for i in range(receiver.RATE_LIMIT_PER_SECOND + 3)]
-        self.assertIn(429, statuses)
-        self.assertEqual(statuses[0], 200)
-
     def test_status_reports_contract(self):
         self.start()
         status, body = self.call("/status")
-        self.assertEqual((status, body["contract"], body["locked"]), (200, receiver.CONTRACT, False))
+        self.assertEqual((status, body["service"], body["screen_locked"], body["accessibility"]),
+                         (200, "greenfield-inserter-stub", False, True))
 
     def test_only_the_last_hundred_ids_are_remembered(self):
         state = receiver.State(echo=False)

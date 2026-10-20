@@ -12,7 +12,11 @@ struct SelfTest {
 
     static func runIfRequested(_ model: AppModel) async {
         let test = SelfTest(model: model)
-        if let name = test.defaults.string(forKey: "selftest-sounds") {
+        test.removeSelfTestTargets()
+        defer { test.removeSelfTestTargets() }
+        if test.defaults.bool(forKey: "selftest-health") {
+            await test.checkHealth()
+        } else if let name = test.defaults.string(forKey: "selftest-sounds") {
             await test.runSounds(wav: name)
         } else if let name = test.defaults.string(forKey: "selftest-wav") {
             await test.run(wav: name)
@@ -48,6 +52,26 @@ struct SelfTest {
             say("t=\(time) \(event.pattern) \(event.topClass) p=\(probability)\(fired)")
         }
         say("final state \(model.flow.state.title)")
+    }
+
+    /// Asks every listed computer for its status with a throwaway key (set only where none is saved, then removed), so the real agents'
+    /// answers can be checked without anyone's secret. `-selftest-health YES`.
+    private func checkHealth() async {
+        say("tailnet connected: \(Tailnet.isConnected())")
+        for target in model.targets.targets {
+            let borrowed = model.targets.key(for: target) == nil
+            if borrowed { try? model.targets.save(target, key: "selftest-not-a-real-key") }
+            await model.health.refresh(target)
+            say("\(target.name) (\(target.address)): \(model.health.state(for: target).summary)")
+            if borrowed { try? model.targets.save(target, key: "") }
+        }
+    }
+
+    /// Test runs add a computer called "Self test"; they never stay in the list a person sees.
+    func removeSelfTestTargets() {
+        let leftovers = model.targets.targets.filter { $0.name == "Self test" }
+        for target in leftovers { model.targets.remove(target.id) }
+        if let first = model.targets.targets.first, model.targets.selected == nil { model.targets.select(first.id) }
     }
 
     private func say(_ line: String) { print("SELFTEST \(line)") }

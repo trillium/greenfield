@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Stand-in for a Mac-side text inserter, implementing docs/mac-contract.md without inserting anything.
+"""Stand-in for the Mac input agent (greenfield-inserter), speaking the same HTTP API without inserting anything.
 
 Accepted texts are printed as JSON lines and, with --log FILE, appended to that file, so a test can check exactly what arrived.
 Simulate the refusal paths with --locked and --secure-input. Standard library only.
 
-    python3 tools/stub-receiver/receiver.py --host 0.0.0.0 --port 7788 --key secret --log /tmp/received.jsonl
+    python3 tools/stub-receiver/receiver.py --host 0.0.0.0 --port 47821 --key secret --log /tmp/received.jsonl
 """
 import argparse
 import collections
@@ -15,9 +15,7 @@ import time
 import unicodedata
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-CONTRACT = "1.0"
-MAX_BODY = 4096
-RATE_LIMIT_PER_SECOND = 10
+MAX_BODY = 262144
 REMEMBERED_IDS = 100
 
 
@@ -37,18 +35,9 @@ class State:
         self.secure_input = secure_input
         self.log = log
         self.name = name or socket.gethostname()
+        self.started = time.time()
         self.seen = collections.OrderedDict()
-        self.recent = collections.deque()
         self.lock = threading.Lock()
-
-    def rate_limited(self, now):
-        with self.lock:
-            while self.recent and now - self.recent[0] > 1.0:
-                self.recent.popleft()
-            if len(self.recent) >= RATE_LIMIT_PER_SECOND:
-                return True
-            self.recent.append(now)
-            return False
 
     def accept(self, request_id, text):
         """Returns (duplicate, ms). Records the text."""
@@ -91,9 +80,10 @@ def make_handler(state):
             if self.path != "/status":
                 return self.reply(404, {"ok": False, "error": "not_found"})
             if not self.authorized():
-                return self.reply(401, {"ok": False, "error": "bad_key"})
-            self.reply(200, {"ok": True, "contract": CONTRACT, "name": state.name, "locked": state.locked,
-                             "secure_input": state.secure_input, "frontmost_bundle_id": "stub.receiver", "idle_seconds": 0.0})
+                return self.reply(401, {"ok": False, "error": "unauthorized"})
+            self.reply(200, {"ok": True, "service": "greenfield-inserter-stub", "version": "stub", "name": state.name,
+                             "uptime_s": int(time.time() - state.started), "secure_input": state.secure_input,
+                             "screen_locked": state.locked, "accessibility": True, "inserted_count": len(state.seen)})
 
         def do_POST(self):
             length = int(self.headers.get("Content-Length") or 0)
@@ -102,22 +92,20 @@ def make_handler(state):
                 return self.reply(404, {"ok": False, "error": "not_found"})
             if not self.authorized():
                 self.rfile.read(min(length, MAX_BODY))
-                return self.reply(401, {"ok": False, "error": "bad_key"})
+                return self.reply(401, {"ok": False, "error": "unauthorized"})
             if length > MAX_BODY:
                 self.close_connection = True
                 return self.reply(413, {"ok": False, "error": "too_large"})
             body = self.rfile.read(length)
-            if state.rate_limited(time.monotonic()):
-                return self.reply(429, {"ok": False, "error": "rate_limited"})
             try:
                 payload = json.loads(body.decode("utf-8"))
                 request_id, text = payload["id"], sanitize(payload["text"])
                 if not isinstance(request_id, str) or not request_id or not text:
                     raise ValueError("empty")
             except (ValueError, KeyError, TypeError, UnicodeDecodeError):
-                return self.reply(422, {"ok": False, "error": "invalid_text"})
+                return self.reply(422, {"ok": False, "error": "bad_request"})
             if state.locked:
-                return self.reply(423, {"ok": False, "error": "locked"})
+                return self.reply(423, {"ok": False, "error": "screen_locked"})
             if state.secure_input:
                 return self.reply(409, {"ok": False, "error": "secure_input"})
             duplicate, ms = state.accept(request_id, text)
@@ -136,7 +124,7 @@ def make_server(host, port, state):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=7788)
+    parser.add_argument("--port", type=int, default=47821)
     parser.add_argument("--key", help="required X-Dictation-Key value (omit to accept any request)")
     parser.add_argument("--log", help="append accepted texts to this file as JSON lines")
     parser.add_argument("--name", help="name reported by /status")
@@ -145,7 +133,7 @@ def main():
     args = parser.parse_args()
     state = State(key=args.key, locked=args.locked, secure_input=args.secure_input, log=args.log, name=args.name)
     server = make_server(args.host, args.port, state)
-    print(f"stub receiver on http://{args.host}:{server.server_address[1]} (contract {CONTRACT}, key {'set' if args.key else 'none'})",
+    print(f"stub receiver on http://{args.host}:{server.server_address[1]} (key {'set' if args.key else 'none'})",
           flush=True)
     server.serve_forever()
 

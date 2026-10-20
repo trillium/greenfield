@@ -36,8 +36,8 @@ lint: ## swiftlint, warnings are errors
 	swiftlint lint --strict --quiet
 secrets: ## block signing material and credentials in tracked files
 	scripts/check-secrets.sh --tracked
-stub-receiver: ## run the stub Mac receiver (HOST=0.0.0.0 PORT=7788 KEY=secret LOG=file); see docs/mac-contract.md
-	python3 tools/stub-receiver/receiver.py --host $(or $(HOST),127.0.0.1) --port $(or $(PORT),7788) $(if $(KEY),--key $(KEY)) $(if $(LOG),--log $(LOG))
+stub-receiver: ## run the stub Mac receiver (HOST=0.0.0.0 PORT=47821 KEY=secret LOG=file); see docs/mac-contract.md
+	python3 tools/stub-receiver/receiver.py --host $(or $(HOST),127.0.0.1) --port $(or $(PORT),47821) $(if $(KEY),--key $(KEY)) $(if $(LOG),--log $(LOG))
 stub-receiver-test: ## unit tests for the stub receiver
 	python3 -m unittest discover -s tools/stub-receiver -q
 spike-audio: ## make the spike's test audio with macOS `say` (gitignored); see docs/spike-dictation.md

@@ -4,8 +4,8 @@ import XCTest
 final class MacTargetTests: XCTestCase {
     func testABareHostGetsTheDefaultPort() {
         let name = "macbook.example.ts.net"
-        XCTAssertEqual(MacTarget(name: "a", address: name).baseURL?.absoluteString, "http://\(name):7788")
-        XCTAssertEqual(MacTarget(name: "a", address: "100.64.1.2").baseURL?.absoluteString, "http://100.64.1.2:7788")
+        XCTAssertEqual(MacTarget(name: "a", address: name).baseURL?.absoluteString, "http://\(name):47821")
+        XCTAssertEqual(MacTarget(name: "a", address: "100.64.1.2").baseURL?.absoluteString, "http://100.64.1.2:47821")
     }
 
     func testAnExplicitPortIsKept() {
@@ -42,6 +42,7 @@ final class ReceiverClientTests: XCTestCase {
         XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
         XCTAssertEqual(bodyJSON(request)["id"] as? String, id.uuidString)
         XCTAssertEqual(bodyJSON(request)["text"] as? String, "Hello, world.")
+        XCTAssertEqual(bodyJSON(request)["source"] as? String, "greenfield")
         XCTAssertFalse(request.url?.absoluteString.contains("s3cret") ?? true, "the key never goes in the URL")
     }
 
@@ -53,8 +54,9 @@ final class ReceiverClientTests: XCTestCase {
 
     func testEveryDocumentedRefusalIsRecognised() {
         let cases: [Int: (String, ReceiverClient.Refusal)] = [
-            401: ("bad_key", .badKey), 409: ("secure_input", .secureInput), 413: ("too_large", .tooLarge),
-            422: ("invalid_text", .invalidText), 423: ("locked", .locked), 429: ("rate_limited", .rateLimited)
+            401: ("unauthorized", .badKey), 409: ("secure_input", .secureInput), 413: ("too_large", .tooLarge),
+            400: ("bad_request", .invalidText), 423: ("screen_locked", .locked), 503: ("accessibility_not_granted", .needsAccessibility),
+            500: ("insert_failed", .insertFailed)
         ]
         for (status, (error, refusal)) in cases {
             XCTAssertEqual(ReceiverClient.interpret(status: status, data: json(["ok": false, "error": error])), .refused(refusal))
@@ -69,7 +71,7 @@ final class ReceiverClientTests: XCTestCase {
 
     func testAnAnswerThatIsNotAReceiverIsNotDelivery() {
         if case .unreachable = ReceiverClient.interpret(status: 200, data: Data("<html>".utf8)) {} else { XCTFail("200 without ok") }
-        if case .unreachable = ReceiverClient.interpret(status: 500, data: Data()) {} else { XCTFail("500") }
+        if case .unreachable = ReceiverClient.interpret(status: 502, data: Data()) {} else { XCTFail("502") }
     }
 
     func testANetworkErrorIsUnreachableAndKeepsTheText() async {
@@ -81,17 +83,25 @@ final class ReceiverClientTests: XCTestCase {
 
     func testOversizedTextIsRefusedWithoutASend() async {
         StubURLProtocol.install { _ in (200, json(["ok": true])) }
-        let (outcome, _) = await client().send(id: id, text: String(repeating: "a", count: 5000), to: base, key: nil)
+        let (outcome, _) = await client().send(id: id, text: String(repeating: "a", count: 300_000), to: base, key: nil)
         XCTAssertEqual(outcome, .refused(.tooLarge))
         XCTAssertTrue(StubURLProtocol.requests.isEmpty)
     }
 
     func testHealthStates() {
-        let ready = json(["ok": true, "contract": "1.3", "name": "MacBook", "locked": false, "secure_input": false])
-        XCTAssertEqual(ReceiverClient.interpretHealth(status: 200, data: ready), .ready(name: "MacBook", locked: false, secureInput: false))
+        let ready = json(["ok": true, "service": "greenfield-inserter", "version": "0.1.0", "name": "MacBook", "screen_locked": false,
+                          "secure_input": true, "accessibility": false, "inserted_count": 7])
+        let status = ReceiverClient.MacStatus(name: "MacBook", version: "0.1.0", locked: false, secureInput: true, accessibility: false,
+                                              insertedCount: 7)
+        XCTAssertEqual(ReceiverClient.interpretHealth(status: 200, data: ready), .ready(status))
         XCTAssertEqual(ReceiverClient.interpretHealth(status: 401, data: Data()), .wrongKey)
+        let noKey = json(["ok": false, "error": "key_not_configured"])
+        XCTAssertEqual(ReceiverClient.interpretHealth(status: 503, data: noKey), .keyNotSetOnMac)
         if case .incompatible = ReceiverClient.interpretHealth(status: 200, data: json(["ok": true, "contract": "2.0"])) {} else {
-            XCTFail("a newer major is refused")
+            XCTFail("a newer stated major is refused")
+        }
+        if case .ready = ReceiverClient.interpretHealth(status: 200, data: json(["ok": true, "name": "x"])) {} else {
+            XCTFail("an agent that states no contract is accepted")
         }
         if case .unreachable = ReceiverClient.interpretHealth(status: 404, data: Data()) {} else { XCTFail("404") }
     }
@@ -205,5 +215,45 @@ final class TargetStoreTests: XCTestCase {
         XCTAssertEqual(keychain.key(for: id), "def456")
         try keychain.setKey(nil, for: id)
         XCTAssertNil(keychain.key(for: id))
+    }
+}
+
+@MainActor
+final class PresetComputersTests: XCTestCase {
+    func testPresetsAreAddedOnceWithoutKeys() {
+        let keys = MemoryKeyStore()
+        let defaults = isolatedDefaults()
+        let store = TargetStore(defaults: defaults, keys: keys)
+        store.seedPresets("alpha=alpha.example.ts.net beta=beta.example.ts.net")
+        XCTAssertEqual(store.targets.map(\.name), ["alpha", "beta"])
+        XCTAssertEqual(store.selected?.name, "alpha")
+        XCTAssertNil(store.key(for: store.targets[0]), "keys are entered by the person, never preset")
+        store.remove(store.targets[1].id)
+
+        let again = TargetStore(defaults: defaults, keys: keys)
+        again.seedPresets("alpha=alpha.example.ts.net beta=beta.example.ts.net")
+        XCTAssertEqual(again.targets.map(\.name), ["alpha"], "a removed preset stays removed")
+    }
+
+    func testEmptyOrMalformedPresetsAddNothing() {
+        let store = TargetStore(defaults: isolatedDefaults(), keys: MemoryKeyStore())
+        store.seedPresets(nil)
+        store.seedPresets("")
+        store.seedPresets("noequals")
+        XCTAssertTrue(store.targets.isEmpty)
+    }
+
+    func testAComputerWithoutAKeyShowsAsNeedingOne() async throws {
+        let store = TargetStore(defaults: isolatedDefaults(), keys: MemoryKeyStore())
+        store.seedPresets("alpha=alpha.example.ts.net")
+        let client = ReceiverClient(session: StubURLProtocol.session(), tailnetConnected: { true })
+        let health = TargetHealth(service: DeliveryService(outbox: Outbox(url: nil), targets: store, client: client))
+        StubURLProtocol.install { _ in (200, json(["ok": true])) }
+        await health.refreshAll()
+        XCTAssertEqual(health.state(for: store.targets[0]), .noKey)
+        XCTAssertTrue(StubURLProtocol.requests.isEmpty, "no request is sent without a key")
+        try store.save(store.targets[0], key: "k")
+        await health.refreshAll()
+        XCTAssertEqual(health.state(for: store.targets[0]), .ready(ReceiverClient.MacStatus()))
     }
 }

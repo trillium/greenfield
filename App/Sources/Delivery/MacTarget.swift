@@ -7,7 +7,8 @@ struct MacTarget: Codable, Equatable, Identifiable, Sendable {
     /// A tailnet name (`macbook.example.ts.net`), a tailnet or LAN address, or `host:port`.
     var address: String
 
-    static let defaultPort = 7788
+    /// The port the Mac input agent listens on.
+    static let defaultPort = 47821
 
     init(id: UUID = UUID(), name: String, address: String) {
         self.id = id

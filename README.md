@@ -19,7 +19,7 @@ Non-speech sounds (tongue clicks, pops, kitty-cmere) start and end dictation thr
 - `App/Sources/Dictation`: hold to talk (`DictationSession`, `UtteranceBuffer`) and the speech model (`ParakeetTranscriber`, through FluidAudio).
 - `App/Sources/Delivery`: Macs, keys, outbox, the HTTP client and delivery.
 - `Spike/`: a separate benchmark app comparing Parakeet, WhisperKit and Moonshine on the phone. Results: `docs/spike-dictation.md`.
-- `docs/mac-contract.md`: the HTTP contract between the phone and a Mac-side text inserter. The inserter itself is a separate project; `tools/stub-receiver` stands in for it in tests.
+- `docs/mac-contract.md`: how the phone talks to the Mac input agent (`greenfield-inserter`, a separate project). `tools/stub-receiver` stands in for it in tests.
 - `docs/sounds.md`, `docs/attribution.md`, `docs/audio-session.md`, `docs/versioning.md`, `docs/signing.md`.
 
 ## Build
@@ -32,7 +32,7 @@ Non-speech sounds (tongue clicks, pops, kitty-cmere) start and end dictation thr
 To run on a device, copy `Config/Local.xcconfig.example` to `Config/Local.xcconfig` and set `DEVELOPMENT_TEAM`. The speech model (about 0.5 GB) downloads on the first launch and is never in git. Credentials: `docs/signing.md`. Versioning: `docs/versioning.md`.
 
 ## Try it without a Mac receiver
-`make stub-receiver HOST=<tailnet address> KEY=<secret> LOG=/tmp/received.jsonl` runs a stand-in receiver that logs what arrives. Add that address and key under Macs in the app.
+`make stub-receiver HOST=<tailnet address> KEY=<secret> PORT=47821 LOG=/tmp/received.jsonl` runs a stand-in receiver that logs what arrives. Add that address and key under Macs in the app.
 
 ## Network trust
 There is no account system. The app expects to reach the Mac over a private network (for example a Tailscale tailnet), and each Mac has its own key. App Transport Security permits plain http to `*.ts.net` (subdomains included) and to local short names; there is no blanket exception. 100.x tailnet addresses are sent over a plain TCP transport that App Transport Security does not govern. If the phone is not on the tailnet, a tailnet name or address fails at once with a clear message instead of a timeout. Do not expose a Mac receiver to the public internet.

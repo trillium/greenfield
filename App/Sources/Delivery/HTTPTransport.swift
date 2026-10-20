@@ -110,7 +110,17 @@ private final class Exchange: @unchecked Sendable {
         complete(.success((parsed.status, parsed.body)))
     }
 
-    func fail(_ error: Error) { complete(.failure(error)) }
+    func fail(_ error: Error) { complete(.failure(Self.readable(error))) }
+
+    /// Network.framework errors as the URL errors the client already explains.
+    static func readable(_ error: Error) -> Error {
+        guard case NWError.posix(let code) = error else { return error }
+        switch code {
+        case .ECONNREFUSED, .EHOSTUNREACH, .ENETUNREACH, .EHOSTDOWN, .ENETDOWN: return URLError(.cannotConnectToHost)
+        case .ETIMEDOUT: return URLError(.timedOut)
+        default: return error
+        }
+    }
 
     private func complete(_ result: Result<(status: Int, data: Data), Error>) {
         lock.lock()

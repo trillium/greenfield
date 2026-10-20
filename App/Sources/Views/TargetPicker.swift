@@ -7,7 +7,7 @@ struct TargetPicker: View {
     var body: some View {
         let targets = model.targets
         if targets.targets.isEmpty {
-            Label("Add a Mac in the Macs tab to send your words somewhere.", systemImage: "desktopcomputer")
+            Label("Add a computer in the Computers tab to send your words somewhere.", systemImage: "desktopcomputer")
                 .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
@@ -29,7 +29,7 @@ struct TargetPicker: View {
                     Spacer()
                 }
             }
-            .accessibilityLabel("Target Mac")
+            .accessibilityLabel("Active computer")
         }
     }
 }
@@ -45,7 +45,7 @@ struct HealthDot: View {
     private var color: Color {
         switch state {
         case .ready: return .green
-        case .notice, .wrongKey, .incompatible: return .orange
+        case .notice, .noKey, .wrongKey, .keyNotSetOnMac, .incompatible: return .orange
         case .unreachable: return .red
         case .unknown, .checking: return .gray
         }
