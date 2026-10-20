@@ -7,6 +7,8 @@ final class DeliveryService {
     let outbox: Outbox
     let targets: TargetStore
     private let client: ReceiverClient
+    /// Diagnostics; set by the app model.
+    var log: EventLog?
     /// Ids being sent right now, so a double tap on Resend cannot send twice at once.
     private(set) var inFlight: Set<UUID> = []
 
@@ -27,11 +29,24 @@ final class DeliveryService {
         inFlight.insert(id)
         defer { inFlight.remove(id) }
         outbox.markAttempt(id, targetName: target.name)
-        let (outcome, networkMs) = await client.send(id: id, text: item.text, to: base, key: targets.key(for: target))
+        guard let key = targets.key(for: target), !key.isEmpty else {
+            let reason = "No key is set for \(target.name). Enter it in the Computers tab."
+            outbox.markFailed(id, reason: reason)
+            log?.add(.send, "not sent to \(target.name): no key saved on the phone")
+            return nil
+        }
+        let (outcome, networkMs) = await client.send(id: id, text: item.text, to: base, key: key)
         switch outcome {
-        case .delivered(_, let macMs): outbox.markSent(id, networkMs: networkMs, macMs: macMs)
-        case .refused(let refusal): outbox.markFailed(id, reason: refusal.message)
-        case .unreachable(let reason): outbox.markFailed(id, reason: reason)
+        case .delivered(let duplicate, let macMs):
+            outbox.markSent(id, networkMs: networkMs, macMs: macMs)
+            let note = duplicate ? " (already had it)" : ""
+            log?.add(.send, "sent to \(target.name) in \(networkMs) ms\(note), \(item.text.count) characters")
+        case .refused(let refusal):
+            outbox.markFailed(id, reason: refusal.message)
+            log?.add(.send, "\(target.name) refused: \(refusal.message)")
+        case .unreachable(let reason):
+            outbox.markFailed(id, reason: reason)
+            log?.add(.send, "could not reach \(target.name): \(reason)")
         }
         return outcome
     }

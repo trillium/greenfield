@@ -29,18 +29,22 @@ final class FlowController {
     let session: DictationSession
     let delivery: DeliveryService
     let models: ParrotModelStore
+    let log: EventLog
     private let ruleStore: RuleStore
     private var listener: SoundListener?
     private var observer: NSObjectProtocol?
 
-    init(session: DictationSession, delivery: DeliveryService, models: ParrotModelStore, ruleStore: RuleStore) {
+    init(session: DictationSession, delivery: DeliveryService, models: ParrotModelStore, ruleStore: RuleStore,
+         log: EventLog = EventLog(url: nil)) {
+        self.log = log
         self.session = session
         self.delivery = delivery
         self.models = models
         self.ruleStore = ruleStore
         engine = RuleEngine(rules: ruleStore.load())
         session.onDictating = { [weak self] on in self?.dictationChanged(on) }
-        session.onTranscript = { [weak self] text, _ in self?.transcribed(text) }
+        session.onTranscript = { [weak self] text, asrMs in self?.transcribed(text, asrMs: asrMs) }
+        session.onLog = { [weak self] category, line in self?.log.add(category, line) }
         observer = NotificationCenter.default.addObserver(forName: ParrotModelStore.didChange, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.startDetector() }
         }
@@ -70,17 +74,28 @@ final class FlowController {
             modelName = source.name
             detectorLabels = detector.labels
             detectorProblem = nil
+            log.add(.model, "sound detector listening with \(source.name) (\(detector.labels.count) classes)")
             listener = SoundListener(detector: detector, bus: session.capture.bus) { events in
                 MainActor.assumeIsolated { [weak self] in self?.heard(events) }
             }
         } catch {
             detectorProblem = String(describing: error)
+            log.add(.model, "sound detector could not start: \(error)")
         }
     }
 
     func heard(_ events: [SoundEvent]) {
         for event in events {
+            let before = engine.state
             let fired = engine.hear(event.pattern, at: event.time)
+            // The model's "not a command" patterns can fire dozens of times a second; they stay out of the log.
+            if !event.pattern.hasPrefix("suppress") {
+                let percent = Int((event.probability * 100).rounded())
+                log.add(.sound, "\(event.pattern) \(percent)% (\(event.topClass), power \(Int(event.power)))")
+            }
+            if let fired {
+                log.add(.rule, "fired \(fired.summary) -> \(fired.action.title) (was \(before.title), now \(engine.state.title))")
+            }
             let sound = HeardSound(event: event, heardAt: Date(), firedRule: fired?.summary)
             lastSound = sound
             recentSounds.insert(sound, at: 0)
@@ -99,6 +114,18 @@ final class FlowController {
     func resetRules() { setRules(SoundRule.defaults) }
 
     // MARK: Actions
+
+    /// The microphone button: tap to start, tap to stop. It follows the same state as the sounds: tapping while dictating ends
+    /// dictation like a tongue click; tapping while idle or in review starts it (more text goes on the end of the box).
+    func toggleDictation() {
+        if session.isHolding {
+            log.add(.dictation, "button: stop dictation")
+            session.endHold()
+        } else {
+            log.add(.dictation, "button: start dictation")
+            session.beginHold()
+        }
+    }
 
     func perform(_ action: FlowAction) {
         switch action {
@@ -129,6 +156,7 @@ final class FlowController {
         engine.setState(.idle)
         guard !trimmed.isEmpty else { return }
         let item = delivery.outbox.add(text: trimmed)
+        log.add(.send, "submitted \(trimmed.count) characters to \(delivery.targets.selected?.name ?? "no computer")")
         text = ""
         Task { await delivery.deliver(item.id) }
     }
@@ -136,6 +164,7 @@ final class FlowController {
     // MARK: Session callbacks
 
     private func dictationChanged(_ on: Bool) {
+        log.add(.dictation, on ? "recording started" : "recording stopped")
         if on {
             engine.setState(.dictating)
         } else if engine.state == .dictating {
@@ -143,7 +172,8 @@ final class FlowController {
         }
     }
 
-    private func transcribed(_ words: String) {
+    private func transcribed(_ words: String, asrMs: Int) {
+        log.add(.dictation, "transcribed \(words.count) characters in \(asrMs) ms")
         text = text.isEmpty ? words : text + " " + words
     }
 }

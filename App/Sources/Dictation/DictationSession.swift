@@ -101,6 +101,8 @@ final class DictationSession {
     private var releaseGuard: Task<Void, Never>?
     /// Called with each non-empty transcript and the speech model's time in milliseconds.
     var onTranscript: (@MainActor (String, Int) -> Void)?
+    /// Diagnostics: microphone and model events as they happen.
+    var onLog: (@MainActor (EventLog.Category, String) -> Void)?
     /// Called when recording starts (true) or stops (false), whatever started it: the button, a sound, or a lost microphone.
     var onDictating: (@MainActor (Bool) -> Void)?
 
@@ -126,6 +128,7 @@ final class DictationSession {
         case .downloading, .loading, .ready: return
         }
         model = transcriber.isDownloaded() ? .loading : .downloading(0)
+        onLog?(.model, transcriber.isDownloaded() ? "speech model already on this phone, loading" : "speech model downloading")
         do {
             try await transcriber.prepare { [weak self] update in
                 Task { @MainActor in
@@ -139,8 +142,10 @@ final class DictationSession {
                 }
             }
             model = .ready
+            onLog?(.model, "speech model ready")
         } catch {
             model = .failed(String(describing: error))
+            onLog?(.model, "speech model failed: \(error)")
         }
     }
 
@@ -200,6 +205,7 @@ final class DictationSession {
 
     private func apply(_ outcome: ListenMachine.Outcome) {
         log.append(contentsOf: outcome.log)
+        for line in outcome.log { onLog?(.mic, line) }
         if log.count > 200 { log.removeFirst(log.count - 200) }
         for action in outcome.actions {
             switch action {

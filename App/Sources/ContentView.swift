@@ -11,7 +11,7 @@ struct ContentView: View {
             OutboxView(model: model).tabItem { Label("Outbox", systemImage: "tray.full") }
                 .badge(model.outbox.pending.count)
             TargetsView(model: model).tabItem { Label("Computers", systemImage: "desktopcomputer") }
-            AboutView().tabItem { Label("About", systemImage: "info.circle") }
+            AboutView(log: model.log).tabItem { Label("About", systemImage: "info.circle") }
         }
         .task { await model.session.prepareModel() }
         .task { model.flow.startDetector() }

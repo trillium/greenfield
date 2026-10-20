@@ -12,15 +12,20 @@ final class AppModel {
     let delivery: DeliveryService
     let health: TargetHealth
     let flow: FlowController
+    let log: EventLog
 
     init(session: DictationSession, outbox: Outbox, targets: TargetStore, client: ReceiverClient = ReceiverClient(),
-         models: ParrotModelStore = ParrotModelStore(), ruleStore: RuleStore = RuleStore(defaults: .standard)) {
+         models: ParrotModelStore = ParrotModelStore(), ruleStore: RuleStore = RuleStore(defaults: .standard),
+         log: EventLog = EventLog(url: nil)) {
+        self.log = log
         self.session = session
         self.outbox = outbox
         self.targets = targets
         delivery = DeliveryService(outbox: outbox, targets: targets, client: client)
         health = TargetHealth(service: delivery)
-        flow = FlowController(session: session, delivery: delivery, models: models, ruleStore: ruleStore)
+        delivery.log = log
+        flow = FlowController(session: session, delivery: delivery, models: models, ruleStore: ruleStore, log: log)
+        log.add(.app, "app started, \(BuildInfo().display)")
     }
 
     static func live() -> AppModel {
@@ -33,7 +38,8 @@ final class AppModel {
         if fake { _ = machine.handle(.started) }
         let session = DictationSession(transcriber: ParakeetTranscriber(), listen: machine)
         if fake { session.attach() }
-        return AppModel(session: session, outbox: Outbox(url: Outbox.standardURL), targets: targets)
+        return AppModel(session: session, outbox: Outbox(url: Outbox.standardURL), targets: targets,
+                        log: EventLog(url: EventLog.standardURL))
     }
 
     func resend(_ id: UUID) {

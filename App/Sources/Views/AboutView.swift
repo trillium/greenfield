@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct AboutView: View {
+    let log: EventLog
+
     var body: some View {
         NavigationStack {
             List {
@@ -8,6 +10,9 @@ struct AboutView: View {
                     LabeledContent("Version", value: BuildInfo().display)
                     LabeledContent("Speech model", value: ModelInfo.modelName)
                     LabeledContent("Where it runs", value: "On this phone")
+                }
+                Section("Support") {
+                    NavigationLink("Diagnostics") { DiagnosticsView(log: log) }
                 }
                 Section("Licences") {
                     NavigationLink("Attribution") { AttributionView() }

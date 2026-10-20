@@ -18,7 +18,7 @@ struct OutboxView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
-                        Button("Send all unsent", systemImage: "arrow.up.circle") { Task { await model.delivery.resendAll() } }
+                        Button("Retry all unsent", systemImage: "arrow.clockwise") { Task { await model.delivery.resendAll() } }
                             .disabled(model.outbox.pending.isEmpty)
                         Button("Clear sent", systemImage: "trash", role: .destructive) { model.outbox.clearSent() }
                     } label: { Image(systemName: "ellipsis.circle") }
@@ -32,32 +32,51 @@ struct OutboxRow: View {
     let item: OutboxItem
     let model: AppModel
 
+    /// The computer this text went to, or will go to: the one it was last sent to, else the active one.
+    private var destination: String { item.targetName ?? model.targets.selected?.name ?? "no computer chosen" }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(item.text).textSelection(.enabled)
-            StatusLine(item: item)
+            Label(item.status == .sent ? "Sent to \(destination)" : "For \(destination)", systemImage: "desktopcomputer")
+                .font(.footnote).foregroundStyle(.secondary)
+            WaitingReason(item: item, sending: model.delivery.inFlight.contains(item.id))
             Text(item.createdAt.formatted(date: .abbreviated, time: .standard)).font(.caption2).foregroundStyle(.tertiary)
             if item.status == .pending, !model.delivery.inFlight.contains(item.id) {
-                Button("Resend", systemImage: "arrow.up.circle") { model.resend(item.id) }.buttonStyle(.bordered)
+                Button("Retry", systemImage: "arrow.clockwise") { model.resend(item.id) }.buttonStyle(.borderedProminent)
             }
         }
         .padding(.vertical, 2)
-        .swipeActions(edge: .leading) {
-            Button("Resend", systemImage: "arrow.up.circle") { model.resend(item.id) }
-                .tint(.accentColor)
-                .disabled(item.status == .sent)
-        }
         .swipeActions(edge: .trailing) {
             Button("Delete", systemImage: "trash", role: .destructive) { model.outbox.remove(item.id) }
         }
         .contextMenu {
             Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = item.text }
-            Button("Resend", systemImage: "arrow.up.circle") { model.resend(item.id) }.disabled(item.status == .sent)
+            Button("Retry", systemImage: "arrow.clockwise") { model.resend(item.id) }.disabled(item.status == .sent)
         }
         .accessibilityElement(children: .combine)
         .accessibilityActions {
             Button("Copy") { UIPasteboard.general.string = item.text }
-            if item.status == .pending { Button("Resend") { model.resend(item.id) } }
+            if item.status == .pending { Button("Retry") { model.resend(item.id) } }
+        }
+    }
+}
+
+/// Why an item is still waiting, in plain words: "The key for this computer is wrong.", "No key is set for mini0."
+struct WaitingReason: View {
+    let item: OutboxItem
+    let sending: Bool
+
+    var body: some View {
+        switch item.status {
+        case .sent:
+            StatusLine(item: item)
+        case .pending:
+            if sending {
+                Label("Sending…", systemImage: "arrow.up.circle").font(.footnote).foregroundStyle(.secondary)
+            } else {
+                Label(item.lastError ?? "Waiting to be sent.", systemImage: "hourglass").font(.footnote).foregroundStyle(.orange)
+            }
         }
     }
 }

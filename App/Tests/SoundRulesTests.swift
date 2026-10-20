@@ -164,6 +164,7 @@ final class EndToEndFlowTests: XCTestCase {
     private func tone(_ seconds: Double) -> [Float] { (0..<Int(seconds * 16_000)).map { 0.2 * sin(Float($0) * 0.1) } }
 
     private struct Rig {
+        let log: EventLog
         let flow: FlowController
         let session: DictationSession
         let outbox: Outbox
@@ -180,9 +181,12 @@ final class EndToEndFlowTests: XCTestCase {
         let client = ReceiverClient(session: StubURLProtocol.session(), tailnetConnected: { true })
         let delivery = DeliveryService(outbox: outbox, targets: store, client: client)
         let models = ParrotModelStore(directory: temporaryFile(), bundled: { [] })
-        let flow = FlowController(session: session, delivery: delivery, models: models, ruleStore: RuleStore(defaults: isolatedDefaults()))
+        let log = EventLog(url: nil)
+        delivery.log = log
+        let flow = FlowController(session: session, delivery: delivery, models: models, ruleStore: RuleStore(defaults: isolatedDefaults()),
+                                  log: log)
         session.attach()
-        return Rig(flow: flow, session: session, outbox: outbox)
+        return Rig(log: log, flow: flow, session: session, outbox: outbox)
     }
 
     private func event(_ pattern: String, _ time: Double) -> SoundEvent {
@@ -260,6 +264,52 @@ final class EndToEndFlowTests: XCTestCase {
         XCTAssertEqual(alwaysOn(), listening, "the microphone feed to the listeners never changed")
     }
 
+    func testTheButtonTapsStartAndStopLikeTheSounds() async throws {
+        let rig = try await rig(withMac: false)
+        let (flow, session) = (rig.flow, rig.session)
+        session.capture.bus.publish(tone(1))
+        flow.toggleDictation()
+        XCTAssertEqual(flow.state, .dictating, "tap while idle starts")
+        XCTAssertTrue(session.isHolding)
+        session.capture.bus.publish(tone(1))
+        flow.toggleDictation()
+        XCTAssertEqual(flow.state, .review, "tap while dictating ends it like a tongue click")
+        XCTAssertFalse(session.isHolding)
+        session.capture.bus.publish(tone(0.3))
+        for _ in 0..<100 where flow.text.isEmpty { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(flow.text, "Hello from the test.")
+        flow.toggleDictation()
+        XCTAssertEqual(flow.state, .dictating, "tap while in review starts again")
+        session.capture.bus.publish(tone(1))
+        flow.toggleDictation()
+        session.capture.bus.publish(tone(0.3))
+        for _ in 0..<100 where flow.text == "Hello from the test." { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(flow.text, "Hello from the test. Hello from the test.", "the new text goes on the end")
+    }
+
+    func testTheDiagnosticsLogTellsTheStory() async throws {
+        StubURLProtocol.install { _ in (200, json(["ok": true, "status": "inserted", "duplicate": false])) }
+        let rig = try await rig(withMac: true)
+        let (flow, session, log) = (rig.flow, rig.session, rig.log)
+        session.capture.bus.publish(tone(1))
+        flow.heard([event("kitty-cmere", 1.0), event("kitty-cmere", 1.3), SoundEvent(time: 1.4, pattern: "suppress_clicks", topClass: "n",
+                                                                                      probability: 1, power: 30)])
+        session.capture.bus.publish(tone(1))
+        flow.heard([event("tongue-click", 3.5)])
+        for _ in 0..<100 where flow.text.isEmpty { try await Task.sleep(for: .milliseconds(20)) }
+        flow.heard([event("tongue-click", 5.0)])
+        for _ in 0..<100 where !log.export().contains("sent to MacBook") { try await Task.sleep(for: .milliseconds(20)) }
+        let text = log.export()
+        XCTAssertTrue(text.contains("[sound] kitty-cmere 99%"))
+        XCTAssertTrue(text.contains("[rule] fired kitty-cmere × 2: Idle → Dictating"))
+        XCTAssertTrue(text.contains("[dictation] recording started"))
+        XCTAssertTrue(text.contains("[dictation] transcribed"))
+        XCTAssertTrue(text.contains("[send] submitted"))
+        XCTAssertTrue(text.contains("[send] sent to MacBook"))
+        XCTAssertFalse(text.contains("suppress"), "the model's not-a-command noise stays out of the log")
+        XCTAssertFalse(text.contains("Hello from the test."), "dictated text is never logged")
+    }
+
     func testTheDetectorListenerStaysSubscribedInEveryState() async throws {
         let rig = try await rig(withMac: false)
         let (flow, session) = (rig.flow, rig.session)
@@ -305,5 +355,29 @@ final class EndToEndFlowTests: XCTestCase {
         session.capture.bus.publish(tone(0.3))
         for _ in 0..<100 where flow.text.isEmpty { try await Task.sleep(for: .milliseconds(20)) }
         XCTAssertEqual(flow.text, "Hello from the test.")
+    }
+}
+
+@MainActor
+final class EventLogTests: XCTestCase {
+    func testNewestFirstAndBounded() {
+        let log = EventLog(url: nil)
+        for index in 0..<(EventLog.capacity + 10) { log.add(.app, "event \(index)") }
+        XCTAssertEqual(log.entries.count, EventLog.capacity)
+        XCTAssertEqual(log.entries.first?.text, "event \(EventLog.capacity + 9)")
+        let last = log.export().split(separator: "\n").last
+        XCTAssertTrue(last?.hasSuffix("event \(EventLog.capacity + 9)") ?? false, "export is oldest first")
+    }
+
+    func testTheLogSurvivesARestart() {
+        let url = temporaryFile()
+        let first = EventLog(url: url)
+        first.add(.send, "sent to MacBook")
+        first.saveNow()
+        let second = EventLog(url: url)
+        XCTAssertEqual(second.entries.map(\.text), ["sent to MacBook"])
+        second.clear()
+        second.saveNow()
+        XCTAssertTrue(EventLog(url: url).entries.isEmpty)
     }
 }

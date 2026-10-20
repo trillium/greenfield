@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The main screen: the state the flow is in, the last sound heard, the text box, and the hold button as the fallback.
+/// The main screen: the state the flow is in, the last sound heard, the text box, and the tap-to-start, tap-to-stop button.
 struct DictateView: View {
     let model: AppModel
 
@@ -15,8 +15,8 @@ struct DictateView: View {
                 LastSoundLine(sound: flow.lastSound)
                 TextBox(flow: flow)
                 statusText(session)
-                HoldButton(enabled: session.canHold, active: session.isHolding, busy: session.transcribing > 0,
-                           press: { session.beginHold() }, release: { session.endHold() })
+                DictationButton(enabled: session.canHold, active: session.isHolding, busy: session.transcribing > 0,
+                                tap: { flow.toggleDictation() })
                     .scaleEffect(0.7)
                     .frame(height: 140)
                 if let item = model.outbox.items.first { QueuedLine(item: item, model: model) }
@@ -193,42 +193,31 @@ struct TextBox: View {
     }
 }
 
-struct HoldButton: View {
+/// The microphone button: tap to start dictation, tap to stop. Same state as the sounds.
+struct DictationButton: View {
     let enabled: Bool
     let active: Bool
     let busy: Bool
-    let press: () -> Void
-    let release: () -> Void
-    @State private var down = false
+    let tap: () -> Void
 
     var body: some View {
-        ZStack {
-            Circle().fill(active ? Color.red : Color.accentColor).opacity(enabled || active ? 1 : 0.35)
-            Circle().stroke(Color.primary.opacity(0.15), lineWidth: 2)
-            Image(systemName: active ? "waveform" : "mic.fill")
-                .font(.system(size: 54, weight: .semibold))
-                .foregroundStyle(.white)
-                .symbolEffect(.variableColor.iterative, isActive: active)
-            if busy && !active { ProgressView().tint(.white).offset(y: 70) }
-        }
-        .frame(width: 180, height: 180)
-        .scaleEffect(active ? 1.08 : 1)
-        .animation(.spring(duration: 0.2), value: active)
-        .contentShape(Circle())
-        .gesture(DragGesture(minimumDistance: 0)
-            .onChanged { _ in
-                guard !down else { return }
-                down = true
-                press()
+        Button(action: tap) {
+            ZStack {
+                Circle().fill(active ? Color.red : Color.accentColor).opacity(enabled || active ? 1 : 0.35)
+                Image(systemName: active ? "stop.fill" : "mic.fill")
+                    .font(.system(size: 54, weight: .semibold))
+                    .foregroundStyle(.white)
+                if busy && !active { ProgressView().tint(.white).offset(y: 70) }
             }
-            .onEnded { _ in
-                down = false
-                release()
-            })
+            .frame(width: 180, height: 180)
+            .scaleEffect(active ? 1.06 : 1)
+            .animation(.spring(duration: 0.2), value: active)
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled && !active)
         .sensoryFeedback(.impact, trigger: active)
-        .accessibilityLabel("Hold to talk")
-        .accessibilityHint("Press and hold while you speak, then let go to write the text")
-        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(active ? "Stop dictation" : "Start dictation")
+        .accessibilityHint("Tap to \(active ? "stop and write the text into the box" : "start recording")")
     }
 }
 

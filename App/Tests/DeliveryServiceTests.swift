@@ -58,6 +58,19 @@ final class DeliveryServiceTests: XCTestCase {
         XCTAssertEqual(outbox.item(id)?.lastError, ReceiverClient.Refusal.locked.message)
     }
 
+    func testAComputerWithoutAKeyIsNotContactedAndSaysWhy() async throws {
+        StubURLProtocol.install { _ in (200, json(["ok": true])) }
+        let rig = try makeService()
+        let target = try XCTUnwrap(rig.store.selected)
+        try rig.store.save(target, key: "")
+        let id = rig.outbox.add(text: "x").id
+        let outcome = await rig.service.deliver(id)
+        XCTAssertNil(outcome)
+        XCTAssertEqual(rig.outbox.item(id)?.lastError, "No key is set for MacBook. Enter it in the Computers tab.")
+        XCTAssertEqual(rig.outbox.item(id)?.targetName, "MacBook")
+        XCTAssertTrue(StubURLProtocol.requests.isEmpty)
+    }
+
     func testNoMacSelectedKeepsTheTextWithoutSending() async throws {
         StubURLProtocol.install { _ in (200, json(["ok": true])) }
         let rig = try makeService(targets: [])
