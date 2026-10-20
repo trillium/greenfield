@@ -26,19 +26,19 @@ DOMAIN="gui/$(id -u)"
 
 case "${1:-}" in
 install)
-    if [ -z "${SIGNED_BINARY:-}" ]; then swift build -c release >&2; fi
+    NEW="$PREFIX/greenfield-inserter.candidate"
     mkdir -p "$PREFIX" "$CONFIG_HOME" "$HOME/Library/LaunchAgents"
     chmod 700 "$CONFIG_HOME"
-    # launchd needs a stable path, and macOS ties the Accessibility grant to that binary.
     if [ -n "${SIGNED_BINARY:-}" ]; then
-        cp "$SIGNED_BINARY" "$PREFIX/greenfield-inserter.new"
-        codesign --verify "$PREFIX/greenfield-inserter.new" >&2
+        cp "$SIGNED_BINARY" "$NEW"
     else
-        cp .build/release/greenfield-inserter "$PREFIX/greenfield-inserter.new"
-        codesign --force --sign "${SIGN_IDENTITY:--}" --identifier greenfield-inserter "$PREFIX/greenfield-inserter.new"
+        scripts/stamp-version.sh
+        swift build -c release >&2
+        # launchd needs a stable path, and macOS ties the Accessibility grant to the binary's signature.
+        cp .build/release/greenfield-inserter "$NEW"
+        codesign --force --sign "${SIGN_IDENTITY:--}" --identifier greenfield-inserter "$NEW"
     fi
-    launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
-    mv "$PREFIX/greenfield-inserter.new" "$PREFIX/greenfield-inserter"
+    codesign --verify --strict "$NEW" >&2
     cat > "$PLIST" <<PLISTEOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -66,8 +66,27 @@ install)
 </plist>
 PLISTEOF
     chmod 644 "$PLIST"
-    launchctl bootstrap "$DOMAIN" "$PLIST"
-    echo "installed $LABEL (binary $PREFIX/greenfield-inserter, log $LOG)"
+    # An installed build that knows `update` runs the replacement (so a candidate that crashes cannot judge its own
+    # install and the rollback is done by the build being replaced); otherwise the candidate installs itself.
+    # Either way: bootout + bootstrap, wait until the RUNNING build is the new file, put the old binary back if not.
+    export GREENFIELD_INSERTER_HOME="$CONFIG_HOME"
+    INSTALLED="$PREFIX/greenfield-inserter"
+    RUNNER="$NEW"
+    if [ -x "$INSTALLED" ] && "$INSTALLED" help 2>&1 | grep -q "update --from"; then RUNNER="$INSTALLED"; fi
+    if [ "$RUNNER" = "$NEW" ] && ! "$NEW" version 2>/dev/null | grep -q "^greenfield-inserter "; then
+        rm -f "$NEW"; echo "the new build does not run; nothing was changed" >&2; exit 1
+    fi
+    if "$RUNNER" update --from "$NEW" --install-to "$INSTALLED" --label "$LABEL" --port "$PORT" \
+       && "$INSTALLED" verify-running --port "$PORT" --install-to "$INSTALLED" >/dev/null; then
+        rm -f "$NEW"
+        echo "installed $LABEL (binary $INSTALLED, log $LOG)"
+        "$INSTALLED" version
+        "$INSTALLED" verify-running --port "$PORT" --install-to "$INSTALLED"
+    else
+        rm -f "$NEW"
+        echo "install did not verify; see the message above (the previous build was restored if there was one)" >&2
+        exit 1
+    fi
     ;;
 uninstall)
     launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true

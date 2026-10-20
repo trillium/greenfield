@@ -24,6 +24,11 @@ usage:
                                               own daemon, read them back; prints PASS or FAIL with the fix
   greenfield-inserter macs selftest ALIAS     run that on another Mac over ssh (see `macs ssh`)
   greenfield-inserter macs ssh ALIAS USER@HOST remember how to ssh to that Mac
+  greenfield-inserter version                 the version, commit and binary hash of this file
+  greenfield-inserter restart                 bootout + bootstrap the launchd agent; wait until the running build is the installed file
+  greenfield-inserter update --from FILE      install a new (signed) build, restart, verify it is the one running; roll back if it does not come up
+  greenfield-inserter verify-running          is the running daemon the installed file? (exit 0 if so)
+  greenfield-inserter macs restart ALIAS      run `restart` on another Mac over ssh (see `macs ssh`)
   greenfield-inserter permissions             check Accessibility; ask macOS to prompt if missing
 
 environment: GREENFIELD_INSERTER_HOME overrides ~/.config/greenfield-inserter
@@ -56,7 +61,7 @@ case "serve":
     var server: HTTPServer!
     let handler = RequestHandler(keys: keys, probe: MacSystemProbe(), inserter: MacInserter(),
                                  name: { nameOverride ?? macName.current() }, listening: { server.listening() },
-                                 identity: TailscaleIdentity(), record: DeliveryLedger(paths: paths), logger: logger)
+                                 identity: TailscaleIdentity(), record: DeliveryLedger(paths: paths), clients: ClientLedger(paths: paths), logger: logger)
     logger.log("starting \(RequestHandler.serviceName) \(RequestHandler.version) name=\(nameOverride ?? macName.current())")
     logger.log("authorization: loopback, same tailnet user\(keys.isConfigured ? ", or the optional key" : "") (no key needed)")
     if !MacSystemProbe().accessibilityTrusted { logger.log("Accessibility not granted; run `greenfield-inserter permissions`") }
@@ -117,8 +122,10 @@ case "health", "doctor":
     let label = macName.current()
     if args[0] == "doctor" {
         var exe: String?
-        if case .ok(let s) = outcome { exe = s.executable }
-        checks = hostChecks(HostInspector.gather(paths: paths), daemonExecutable: exe) + checks
+        var running: BuildIdentity?
+        var uptime: Int?
+        if case .ok(let s) = outcome { exe = s.executable; running = s.build; uptime = s.uptime }
+        checks = hostChecks(HostInspector.gather(paths: paths), daemonExecutable: exe, running: running, uptime: uptime) + checks
         let peers = MacRegistry(paths: paths).load()
         if !peers.isEmpty {
             checks += peerChecks(peers.map { InserterClient.check($0) }, localVersion: RequestHandler.version)
@@ -130,6 +137,80 @@ case "health", "doctor":
         print(formatHealth(label: label, checks: checks))
     }
     exit(isHealthy(checks) ? 0 : 1)
+
+case "version", "--version", "-v":
+    let exe = Bundle.main.executablePath ?? CommandLine.arguments[0]
+    print("greenfield-inserter \(BuildInfo.fullVersion) commit \(BuildInfo.commit) binary \(RunningBuild.sha256Prefix(ofFile: exe) ?? "unknown") build \(BuildInfo.build)")
+
+case "restart", "verify-running", "update":
+    let port = Int(option("--port", in: args) ?? String(InserterDefaults.port)) ?? 0
+    let label = option("--label", in: args) ?? InserterDefaults.launchdLabel
+    let installed = option("--install-to", in: args) ?? InserterDefaults.installedBinary
+    let installedSha = LaunchAgent.sha(of: installed)
+    func describe(_ b: BuildIdentity) -> String { "\(b.version) (commit \(b.commit), binary \(b.binarySha))" }
+
+    switch args[0] {
+    case "verify-running":
+        let running = LaunchAgent.waitForRunning(port: port, expectedSha: installedSha, timeout: Double(option("--wait", in: args) ?? "20") ?? 20)
+        switch judgeRunning(running: running, installedSha: installedSha) {
+        case .match: print("running \(describe(running!)) is the installed file"); exit(0)
+        case .restartNeeded(let r, let i): fail("running build (binary \(r)) is not the installed file (binary \(i)): restart needed")
+        case .notRunning: fail("the daemon is not answering on port \(port)")
+        case .unknown(let why): fail("cannot verify: \(why)")
+        }
+    case "restart":
+        do { try LaunchAgent.restart(label: label) } catch { fail("restart failed: \(error)") }
+        let running = LaunchAgent.waitForRunning(port: port, expectedSha: installedSha)
+        guard let r = running, r.binarySha == installedSha else {
+            fail(running == nil ? "restarted, but the daemon did not answer on port \(port) within 20 seconds"
+                                : "restarted, but the running build (\(describe(running!))) is not the installed file")
+        }
+        print("restarted: running \(describe(r))")
+    default:   // update
+        guard let from = option("--from", in: args) else { fail("usage: update --from FILE", code: 2) }
+        guard FileManager.default.isExecutableFile(atPath: from), let newSha = LaunchAgent.sha(of: from) else { fail("\(from) is not an executable file") }
+        let verify = HostInspector.run("/usr/bin/codesign", ["--verify", "--strict", from])
+        guard verify.status == 0 else { fail("\(from) does not have a valid signature; refusing to install it (an unsigned build would lose the Accessibility approval)") }
+        let fm = FileManager.default
+        let previous = installed + ".previous"
+        let previousSha = installedSha          // what is installed now, before anything is replaced
+        let flow = UpdateFlow(
+            installNew: {
+                try fm.createDirectory(atPath: (installed as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+                if fm.fileExists(atPath: installed) {
+                    try? fm.removeItem(atPath: previous)
+                    try fm.copyItem(atPath: installed, toPath: previous)
+                }
+                let tmp = installed + ".new"
+                try? fm.removeItem(atPath: tmp)
+                try fm.copyItem(atPath: from, toPath: tmp)
+                if rename(tmp, installed) != 0 { throw KeyStoreError.io("could not move the new build into place (errno \(errno))") }
+            },
+            restorePrevious: {
+                guard fm.fileExists(atPath: previous) else { return false }
+                let tmp = installed + ".restore"
+                try? fm.removeItem(atPath: tmp)
+                try fm.copyItem(atPath: previous, toPath: tmp)
+                if rename(tmp, installed) != 0 { throw KeyStoreError.io("could not restore the previous build") }
+                return true
+            },
+            restart: { try LaunchAgent.restart(label: label) },
+            waitForRunning: { LaunchAgent.waitForRunning(port: port, expectedSha: nil, timeout: 20) },
+            newSha: newSha, previousSha: previousSha)
+        // waitForRunning above returns whatever is running; give the new build a moment to replace the old one.
+        var flowWithWait = flow
+        let expectedSha = newSha
+        flowWithWait.waitForRunning = { LaunchAgent.waitForRunning(port: port, expectedSha: expectedSha, timeout: 20) }
+        switch flowWithWait.run() {
+        case .updated(let v): print("updated: running \(v) (binary \(newSha)) from \(installed)")
+        case .rolledBack(let why):
+            let prev = previousSha
+            var line = "UPDATE FAILED and was rolled back: \(why)."
+            if let prev = prev { line += " The previous build (binary \(prev)) is running again." }
+            fail(line)
+        case .failed(let why): fail("UPDATE FAILED: \(why)")
+        }
+    }
 
 case "selftest":
     let port = Int(option("--port", in: args) ?? String(InserterDefaults.port)) ?? 0
@@ -200,6 +281,21 @@ case "macs":
         guard args.count >= 4, let m = all.first(where: { $0.alias == args[2] }) else { fail("usage: macs ssh ALIAS USER@HOST (alias must exist)", code: 2) }
         var updated = m; updated.ssh = args[3]
         do { try registry.upsert(updated); print("saved ssh target for \(m.alias)") } catch { fail("\(error)") }
+    case "restart":
+        guard args.count >= 3 else { fail("usage: macs restart ALIAS", code: 2) }
+        let m = find(args[2])
+        let isHere = ["localhost", "127.0.0.1"].contains(m.host) || m.host.split(separator: ".").first.map(String.init) == MacName.hostname()
+        let command: [String]
+        if isHere { command = [CommandLine.arguments[0], "restart", "--port", String(m.port)] }
+        else if let target = m.ssh {
+            command = ["/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", target,
+                       ".local/share/greenfield-inserter/greenfield-inserter restart --port \(m.port)"]
+        } else { fail("no ssh target for \(m.alias); add one with `macs ssh \(m.alias) USER@HOST`") }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: command[0]); p.arguments = Array(command.dropFirst())
+        do { try p.run() } catch { fail("could not run \(command[0]): \(error)") }
+        p.waitUntilExit()
+        exit(p.terminationStatus)
     case "selftest":
         guard args.count >= 3 else { fail("usage: macs selftest ALIAS", code: 2) }
         let m = find(args[2])

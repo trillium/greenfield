@@ -1,0 +1,9 @@
+{
+  "_comment" : "Recorded from the real handler by ContractTests (RECORD_FIXTURES=1). HTTP status 426. The phone's tests parse this file.",
+  "_http_status" : 426,
+  "error" : "app_too_old",
+  "message" : "this app (0.1.9) is too old for this Mac's daemon (0.2.0; oldest app it works with: 0.2.0). Update the app.",
+  "min_client_version" : "0.2.0",
+  "ok" : false,
+  "version" : "0.2.0"
+}

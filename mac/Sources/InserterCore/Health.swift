@@ -44,6 +44,12 @@ public struct DaemonSnapshot: Equatable {
     public var tailnetUser: String?
     /// Evidence that text really arrives; nil for daemons that predate it.
     public var canInsert: CanInsert?
+    /// The oldest app the daemon accepts, and its own view of the apps it has seen (nil for older daemons).
+    public var minClientVersion: String?
+    public var appCompatible: AppCompat?
+    /// The running build: short commit and a hash of the executable file it was started from.
+    public var build: BuildIdentity?
+    public var uptime: Int?
 
     public static func parse(_ body: Data) -> DaemonSnapshot? {
         guard let o = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
@@ -56,7 +62,23 @@ public struct DaemonSnapshot: Equatable {
             keyConfigured: o["key_configured"] as? Bool ?? true,
             executable: (o["executable"] as? String).flatMap { $0.isEmpty ? nil : $0 }, pid: o["pid"] as? Int,
             auth: o["auth"] as? String, identityOK: o["identity_ok"] as? Bool, tailnetUser: o["tailnet_user"] as? String,
-            canInsert: CanInsert.parse(o["evidence"]))
+            canInsert: CanInsert.parse(o["evidence"]), minClientVersion: o["min_client_version"] as? String,
+            appCompatible: AppCompat.parse(o["app_compatible"]), build: BuildIdentity.parse(o["build"]),
+            uptime: o["uptime_s"] as? Int)
+    }
+}
+
+/// Which build is actually running: lets health compare it with the file on disk.
+public struct BuildIdentity: Equatable {
+    public var version: String
+    public var commit: String
+    public var binarySha: String       // first 16 hex characters of the executable file's SHA-256
+    public var startedAt: String?
+
+    public static func parse(_ any: Any?) -> BuildIdentity? {
+        guard let o = any as? [String: Any], let v = o["version"] as? String else { return nil }
+        return BuildIdentity(version: v, commit: o["commit"] as? String ?? "unknown", binarySha: o["binary_sha"] as? String ?? "unknown",
+                             startedAt: o["started_at"] as? String)
     }
 }
 
@@ -103,7 +125,7 @@ public func snapshotChecks(_ outcome: SnapshotOutcome, subject: HealthSubject, l
             fix: remote
                 ? "Run `tailscale status` here to see if that Mac is online, then on that Mac: `\(bin) doctor` (over ssh if you can)."
                 : "If it is installed: `launchctl kickstart -k gui/$(id -u)/\(InserterDefaults.launchdLabel)`. If not: `make -C mac install` from the repo."))
-        return checks + ["listening", "auth", "accessibility", "unlocked", "secure-input", "version", "can-insert"].map {
+        return checks + ["listening", "auth", "accessibility", "unlocked", "secure-input", "version", "app-compatible", "can-insert"].map {
             HealthCheck($0, titleFor($0), .skip, detail: "not checked: daemon not reachable")
         }
     case .forbidden:
@@ -123,21 +145,21 @@ public func snapshotChecks(_ outcome: SnapshotOutcome, subject: HealthSubject, l
         checks.append(HealthCheck("auth", "Allowed by tailnet identity", .fail, detail: "that Mac refused this device",
             why: "Each Mac accepts only devices of its own tailnet user (or a key, if you set one), and answers HTTP 401 to the rest, so nothing can be inserted. " + keyFileNote,
             fix: "Sign this device and that Mac into the same Tailscale user (`tailscale status` on both shows the user). To allow a device of another user instead, give it that Mac's optional key: `greenfield-inserter macs add \(alias) \(subjectHost(subject)) --key`."))
-        return checks + ["listening", "accessibility", "unlocked", "secure-input", "version", "can-insert"].map {
+        return checks + ["listening", "accessibility", "unlocked", "secure-input", "version", "app-compatible", "can-insert"].map {
             HealthCheck($0, titleFor($0), .skip, detail: "not checked: request refused")
         }
     case .identityUnavailable:
         checks.append(HealthCheck("auth", "Tailnet identity check works", .fail, detail: "\(remote ? "that Mac" : "the daemon") cannot ask Tailscale who is calling (HTTP 503)",
             why: "The daemon refuses every request it cannot attribute to a tailnet user (it fails closed), so nothing can be inserted.",
             fix: "\(onThatMac): make sure Tailscale is running and signed in (`tailscale status`) and that the command-line tool exists at /Applications/Tailscale.app/Contents/MacOS/Tailscale or /opt/homebrew/bin/tailscale."))
-        return checks + ["listening", "accessibility", "unlocked", "secure-input", "version", "can-insert"].map {
+        return checks + ["listening", "accessibility", "unlocked", "secure-input", "version", "app-compatible", "can-insert"].map {
             HealthCheck($0, titleFor($0), .skip, detail: "not checked: identity check failing")
         }
     case .keyNotSet:
         checks.append(HealthCheck("auth", "Allowed without a key", .fail, detail: "older daemon: it still demands a key and none is set",
             why: "Daemons before the tailnet-identity change refuse every request until a key exists.",
             fix: "Update it: copy the repo's mac/ folder to \(remote ? "that Mac" : "this Mac") and run `make -C mac install`."))
-        return checks + ["listening", "accessibility", "unlocked", "secure-input", "version", "can-insert"].map {
+        return checks + ["listening", "accessibility", "unlocked", "secure-input", "version", "app-compatible", "can-insert"].map {
             HealthCheck($0, titleFor($0), .skip, detail: "not checked: no key")
         }
     case .unexpected(let code):
@@ -170,6 +192,7 @@ private func titleFor(_ id: String) -> String {
     case "secure-input": return "No secure input"
     case "version": return "Version"
     case "can-insert": return "Can actually insert text"
+    case "app-compatible": return "App compatible"
     default: return id
     }
 }
@@ -210,7 +233,7 @@ private func okChecks(_ s: DaemonSnapshot, subject: HealthSubject, remote: Bool,
         ? HealthCheck("accessibility", titleFor("accessibility"), .pass, detail: "granted")
         : HealthCheck("accessibility", titleFor("accessibility"), .fail, detail: "not granted to the running daemon",
             why: "macOS silently drops the paste and key events of a program without Accessibility, so nothing would be inserted (the daemon answers 503).",
-            fix: "\(onThatMac): run `\(bin) permissions`, press \"Open System Settings\" in the prompt, and switch on greenfield-inserter under Privacy & Security > Accessibility (add `\(bin)` with + if it is not listed). The grant belongs to that exact file, so redo it after a reinstall."))
+            fix: "\(onThatMac): run `\(bin) permissions`, press \"Open System Settings\" in the prompt, and switch on greenfield-inserter under Privacy & Security > Accessibility (add `\(bin)` with + if it is not listed). The grant belongs to the signed identity, so it survives updates signed with the same certificate; an ad-hoc build needs it again."))
     out.append(!s.screenLocked
         ? HealthCheck("unlocked", titleFor("unlocked"), .pass, detail: "unlocked")
         : HealthCheck("unlocked", titleFor("unlocked"), .fail, detail: "the screen is locked",
@@ -221,13 +244,24 @@ private func okChecks(_ s: DaemonSnapshot, subject: HealthSubject, remote: Bool,
         : HealthCheck("secure-input", titleFor("secure-input"), .fail, detail: "secure input is on",
             why: "A password field (or an app that left secure input on) is capturing the keyboard; the daemon refuses text with HTTP 409 so a password is never typed into the wrong place.",
             fix: "\(onThatMac): click out of the password field or quit the app that holds it; to find it: `ioreg -l -w 0 | grep kCGSSessionSecureInputPID`, then `ps -p <that pid>`."))
-    var version = HealthCheck("version", titleFor("version"), .pass, detail: s.version)
-    if remote && s.version != localVersion {
+    var versionDetail = s.version
+    if let b = s.build { versionDetail += " (commit \(b.commit), binary \(b.binarySha))" }
+    var version = HealthCheck("version", titleFor("version"), .pass, detail: versionDetail)
+    if remote, Compat.judge(peer: s.version, me: localVersion, minPeer: "0.0.0") != .compatible {
         version = HealthCheck("version", titleFor("version"), .warn, detail: "\(s.version) there, \(localVersion) here",
-            why: "Different versions may not support the same requests or checks.",
-            fix: "Copy the repo's mac/ folder to that Mac and run `make install` there.")
+            why: "The two are on different lines of the compatibility rule (while MAJOR is 0 the MINOR must match), so they may not understand each other.",
+            fix: "Update the older side: copy the repository's mac/ folder to that Mac and run `make -C mac install`.")
     }
     out.append(version)
+    if let c = s.appCompatible {
+        let hasNote = c.message.hasPrefix("no app has connected")
+        out.append(c.ok
+            ? HealthCheck("app-compatible", titleFor("app-compatible"), .pass, detail: hasNote ? "note: \(c.message)" : c.message)
+            : HealthCheck("app-compatible", titleFor("app-compatible"), .warn, detail: c.message,
+                          why: "An app that is on the wrong side of the compatibility rule gets HTTP 426 and cannot send text.", fix: c.fix))
+    } else {
+        out.append(HealthCheck("app-compatible", titleFor("app-compatible"), .skip, detail: "this daemon is too old to track the apps it has seen"))
+    }
     out.append(canInsertCheck(s.canInsert, remote: remote, onThatMac: onThatMac, bin: bin))
     return out
 }
@@ -277,10 +311,17 @@ public struct HostFacts: Equatable {
     public var keyFileExists: Bool
     public var keyFileMode: Int?
     public var keyFormatValid: Bool
+    /// "running", "spawn scheduled", ... from `launchctl print`, and how many times launchd has started it.
+    public var launchdState: String?
+    public var launchdRuns: Int?
+    /// Hash prefix of the installed binary on disk, to compare with the running build.
+    public var installedSha: String?
 
     public init(tailnetIPv4: String?, plistPath: String, plistText: String?, launchdLoaded: Bool, launchdPid: Int?,
                 installedBinary: String, binaryExecutable: Bool, configDir: String, dirMode: Int?, keyFile: String,
-                keyFileExists: Bool, keyFileMode: Int?, keyFormatValid: Bool) {
+                keyFileExists: Bool, keyFileMode: Int?, keyFormatValid: Bool,
+                launchdState: String? = nil, launchdRuns: Int? = nil, installedSha: String? = nil) {
+        self.launchdState = launchdState; self.launchdRuns = launchdRuns; self.installedSha = installedSha
         self.tailnetIPv4 = tailnetIPv4; self.plistPath = plistPath; self.plistText = plistText
         self.launchdLoaded = launchdLoaded; self.launchdPid = launchdPid; self.installedBinary = installedBinary
         self.binaryExecutable = binaryExecutable; self.configDir = configDir; self.dirMode = dirMode
@@ -289,7 +330,7 @@ public struct HostFacts: Equatable {
     }
 }
 
-public func hostChecks(_ f: HostFacts, daemonExecutable: String?) -> [HealthCheck] {
+public func hostChecks(_ f: HostFacts, daemonExecutable: String?, running: BuildIdentity? = nil, uptime: Int? = nil) -> [HealthCheck] {
     var out: [HealthCheck] = []
     out.append(f.tailnetIPv4 != nil
         ? HealthCheck("tailnet", "Tailnet address present", .pass, detail: f.tailnetIPv4!)
@@ -347,6 +388,38 @@ public func hostChecks(_ f: HostFacts, daemonExecutable: String?) -> [HealthChec
             fix: "Stop the stray copy and use launchd: `launchctl kickstart -k gui/$(id -u)/\(InserterDefaults.launchdLabel)`."))
     }
 
+    // launchd must be keeping it running, not throttling a crash loop
+    if f.launchdLoaded, let state = f.launchdState, state != "running" {
+        out.append(HealthCheck("launchd-throttle", "launchd is not throttling the agent", .fail, detail: "launchd state is \"\(state)\", not running",
+            why: "launchd waits between restarts of an agent that keeps crashing, so the daemon may be down for a while after each crash.",
+            fix: "`tail ~/.config/greenfield-inserter/launchd-stderr.log ~/.config/greenfield-inserter/inserter.log` for the crash, then `\(f.installedBinary) restart`."))
+    } else if f.launchdLoaded, let runs = f.launchdRuns, runs > 3, let up = uptime, up < 120 {
+        out.append(HealthCheck("launchd-throttle", "launchd is not throttling the agent", .fail,
+            detail: "launchd has started it \(runs) times and it has been up only \(up) seconds",
+            why: "That pattern is a crash loop: each start dies shortly after, and launchd slows the restarts down.",
+            fix: "`tail ~/.config/greenfield-inserter/launchd-stderr.log ~/.config/greenfield-inserter/inserter.log`, fix the cause, then `\(f.installedBinary) restart`."))
+    } else if f.launchdLoaded {
+        out.append(HealthCheck("launchd-throttle", "launchd is not throttling the agent", .pass,
+            detail: "running" + (f.launchdRuns.map { ", started \($0) time\($0 == 1 ? "" : "s") since it was loaded" } ?? "")))
+    }
+
+    // the process that is running must be the file that is installed
+    switch running == nil ? .notRunning : judgeRunning(running: running, installedSha: f.installedSha) {
+    case .match:
+        out.append(HealthCheck("running-build", "Running build is the installed file", .pass,
+            detail: "\(running!.version) (commit \(running!.commit), binary \(running!.binarySha))"))
+    case .restartNeeded(let r, let i):
+        out.append(HealthCheck("running-build", "Running build is the installed file", .fail,
+            detail: "running build is older than (or different from) the installed file: running binary \(r) (\(running?.version ?? "?")), installed \(i); restart needed",
+            why: "launchd keeps the old process running after a file is replaced, so the update has no effect and /status keeps reporting the old version.",
+            fix: "`\(f.installedBinary) restart` (or `make -C mac install`, which restarts and verifies)."))
+    case .notRunning:
+        break    // already reported by the daemon checks
+    case .unknown(let why):
+        out.append(HealthCheck("running-build", "Running build is the installed file", .warn, detail: why,
+            why: "Without both hashes the running build cannot be compared with the installed one.",
+            fix: "`make -C mac install` to put a current build in place and restart it."))
+    }
     return out
 }
 

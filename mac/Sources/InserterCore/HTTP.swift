@@ -66,6 +66,7 @@ public struct HTTPResponse: Equatable {
         case 411: return "Length Required"
         case 413: return "Payload Too Large"
         case 423: return "Locked"
+        case 426: return "Upgrade Required"
         case 431: return "Request Header Fields Too Large"
         case 500: return "Internal Server Error"
         case 501: return "Not Implemented"

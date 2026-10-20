@@ -3,25 +3,28 @@ import XCTest
 
 final class HealthTests: XCTestCase {
     func snap(listen: [String] = ["100.84.99.99:47821", "127.0.0.1:47821"], accessibility: Bool = true, locked: Bool = false,
-              secure: Bool = false, key: Bool = true, identity: Bool = true, version: String = "0.1.0",
-              insert: CanInsert.State = .ok) -> DaemonSnapshot {
+              secure: Bool = false, key: Bool = true, identity: Bool = true, version: String = "0.2.0",
+              insert: CanInsert.State = .ok,
+              appCompat: AppCompat = AppCompat(ok: true, message: "the newest app seen (0.2.0, 2 minutes ago) is compatible with daemon 0.2.0", fix: "")) -> DaemonSnapshot {
         DaemonSnapshot(name: "m", version: version, listen: listen, accessibility: accessibility, screenLocked: locked,
                        secureInput: secure, keyConfigured: key, executable: nil, pid: 42,
                        auth: "tailnet", identityOK: identity, tailnetUser: "me@example",
-                       canInsert: CanInsert(state: insert, at: Date().addingTimeInterval(-120), source: "selftest", detail: "the field stayed empty"))
+                       canInsert: CanInsert(state: insert, at: Date().addingTimeInterval(-120), source: "selftest", detail: "the field stayed empty"),
+                       minClientVersion: "0.2.0", appCompatible: appCompat,
+                       build: BuildIdentity(version: version, commit: "abc1234", binarySha: "0123456789abcdef", startedAt: nil), uptime: 600)
     }
     let local = HealthSubject.local(port: 47821)
     let remote = HealthSubject.remote(alias: "book", host: "book.ts.net", port: 47821)
 
     func checks(_ o: SnapshotOutcome, _ s: HealthSubject? = nil) -> [HealthCheck] {
-        snapshotChecks(o, subject: s ?? local, localVersion: "0.1.0")
+        snapshotChecks(o, subject: s ?? local, localVersion: "0.2.0")
     }
     func status(_ cs: [HealthCheck], _ id: String) -> HealthCheck.Status? { cs.first { $0.id == id }?.status }
 
     func testAllGoodIsHealthy() {
         let cs = checks(.ok(snap()))
         XCTAssertTrue(isHealthy(cs))
-        XCTAssertEqual(cs.map(\.id), ["daemon", "listening", "auth", "accessibility", "unlocked", "secure-input", "version", "can-insert"])
+        XCTAssertEqual(cs.map(\.id), ["daemon", "listening", "auth", "accessibility", "unlocked", "secure-input", "version", "app-compatible", "can-insert"])
         XCTAssertTrue(formatHealth(label: "mini0", checks: cs).hasPrefix("mini0: HEALTHY"))
     }
 
@@ -73,7 +76,7 @@ final class HealthTests: XCTestCase {
             (.unauthorized, remote), (.identityUnavailable, remote), (.keyNotSet, remote), (.unexpected(500), local), (.forbidden, local),
         ]
         for (o, s) in outcomes {
-            for c in snapshotChecks(o, subject: s, localVersion: "0.1.0") where c.status == .fail || c.status == .warn {
+            for c in snapshotChecks(o, subject: s, localVersion: "0.2.0") where c.status == .fail || c.status == .warn {
                 XCTAssertFalse(c.detail.isEmpty, c.id); XCTAssertFalse(c.why.isEmpty, c.id); XCTAssertFalse(c.fix.isEmpty, c.id)
             }
         }
@@ -84,7 +87,7 @@ final class HealthTests: XCTestCase {
         XCTAssertTrue(out.contains("1 problem found"))
         XCTAssertTrue(out.contains("wrong:")); XCTAssertTrue(out.contains("why:")); XCTAssertTrue(out.contains("fix:"))
         XCTAssertTrue(out.contains("Privacy & Security > Accessibility"))
-        XCTAssertTrue(formatDoctor(label: "x", checks: checks(.ok(snap()))).contains("all 8 checks passed"))
+        XCTAssertTrue(formatDoctor(label: "x", checks: checks(.ok(snap()))).contains("all 9 checks passed"))
     }
 
     func testParseSnapshot() {
@@ -103,13 +106,13 @@ final class HealthTests: XCTestCase {
                           launchdLoaded: true, launchdPid: 123, installedBinary: "/h/.local/share/greenfield-inserter/greenfield-inserter",
                           binaryExecutable: true, configDir: "/h/.config/greenfield-inserter", dirMode: 0o700,
                           keyFile: "/h/.config/greenfield-inserter/key", keyFileExists: true, keyFileMode: 0o600,
-                          keyFormatValid: true)
+                          keyFormatValid: true, launchdState: "running", launchdRuns: 1, installedSha: "0123456789abcdef")
         edit(&f)
         return f
     }
 
     func testHostAllGood() {
-        let cs = hostChecks(facts(), daemonExecutable: facts().installedBinary)
+        let cs = hostChecks(facts(), daemonExecutable: facts().installedBinary, running: snap().build, uptime: 600)
         XCTAssertTrue(isHealthy(cs), "\(cs.filter { $0.status != .pass })")
     }
 
@@ -129,6 +132,47 @@ final class HealthTests: XCTestCase {
         XCTAssertEqual(failing({ _ in }, exe: "/tmp/other/greenfield-inserter"), ["path"])
     }
 
+    func testRunningBuildMustBeTheInstalledFile() {
+        func ids(_ edit: (inout HostFacts) -> Void, running: BuildIdentity?, uptime: Int = 600) -> [String] {
+            hostChecks(facts(edit), daemonExecutable: nil, running: running, uptime: uptime).filter { $0.status == .fail }.map(\.id)
+        }
+        let same = BuildIdentity(version: "0.2.0", commit: "a", binarySha: "0123456789abcdef", startedAt: nil)
+        let old = BuildIdentity(version: "0.1.0", commit: "b", binarySha: "ffffffffffffffff", startedAt: nil)
+        XCTAssertEqual(ids({ _ in }, running: same), [])
+        XCTAssertEqual(ids({ _ in }, running: old), ["running-build"])
+        let c = hostChecks(facts(), daemonExecutable: nil, running: old, uptime: 5).first { $0.id == "running-build" }!
+        XCTAssertTrue(c.detail.contains("restart needed")); XCTAssertTrue(c.fix.contains("restart"))
+        XCTAssertEqual(ids({ _ in }, running: nil), [])                      // not running is reported elsewhere
+        // launchd throttling / crash loops
+        XCTAssertEqual(ids({ $0.launchdState = "spawn scheduled" }, running: same), ["launchd-throttle"])
+        XCTAssertEqual(ids({ $0.launchdRuns = 9 }, running: same, uptime: 4), ["launchd-throttle"])
+        XCTAssertEqual(ids({ $0.launchdRuns = 9 }, running: same, uptime: 4000), [])        // many restarts long ago is fine
+    }
+
+    func testJudgeRunning() {
+        let b = BuildIdentity(version: "1", commit: "c", binarySha: "aa", startedAt: nil)
+        XCTAssertEqual(judgeRunning(running: b, installedSha: "aa"), .match)
+        XCTAssertEqual(judgeRunning(running: b, installedSha: "bb"), .restartNeeded(runningSha: "aa", installedSha: "bb"))
+        XCTAssertEqual(judgeRunning(running: nil, installedSha: "bb"), .notRunning)
+        if case .unknown = judgeRunning(running: b, installedSha: nil) {} else { XCTFail() }
+    }
+
+    func testAppCompatibleLine() {
+        XCTAssertEqual(status(checks(.ok(snap())), "app-compatible"), .pass)
+        let none = checks(.ok(snap(appCompat: AppCompat(ok: true, message: "no app has connected yet", fix: ""))))
+        XCTAssertEqual(status(none, "app-compatible"), .pass)                                  // a note, not a failure
+        XCTAssertTrue(none.first { $0.id == "app-compatible" }!.detail.hasPrefix("note:"))
+        let bad = checks(.ok(snap(appCompat: AppCompat(ok: false, message: "the newest app seen is older", fix: "Update the app"))))
+        XCTAssertEqual(status(bad, "app-compatible"), .warn)
+        XCTAssertEqual(bad.first { $0.id == "app-compatible" }!.fix, "Update the app")
+    }
+
+    func testRemoteVersionUsesTheSemverRule() {
+        XCTAssertEqual(status(checks(.ok(snap(version: "0.2.9")), remote), "version"), .pass)   // patch is free
+        XCTAssertEqual(status(checks(.ok(snap(version: "0.1.0")), remote), "version"), .warn)   // another 0.x line
+        XCTAssertEqual(status(checks(.ok(snap(version: "0.9.0"))), "version"), .pass)           // locally not compared
+    }
+
     func testHostFailuresExplainThemselves() {
         let bad = facts { $0.tailnetIPv4 = nil; $0.binaryExecutable = false; $0.plistText = nil; $0.launchdLoaded = false
             $0.launchdPid = nil; $0.keyFileExists = false }
@@ -141,17 +185,17 @@ final class HealthTests: XCTestCase {
         let mac = KnownMac(alias: "book", host: "book.ts.net", key: "SECRET")
         let good = MacReport(mac: mac, state: .ready, name: "b", version: "0.1.0", listen: ["127.0.0.1:1"])
         let bad = MacReport(mac: mac, state: .unreachable("timeout"), name: nil, version: nil)
-        XCTAssertEqual(peerChecks([good], localVersion: "0.1.0").first?.status, .pass)
-        XCTAssertEqual(peerChecks([bad], localVersion: "0.1.0").first?.status, .fail)
+        XCTAssertEqual(peerChecks([good], localVersion: "0.2.0").first?.status, .pass)
+        XCTAssertEqual(peerChecks([bad], localVersion: "0.2.0").first?.status, .fail)
     }
 
     func testNothingEverPrintsAKey() {
         let secret = "SECRET-KEY-VALUE"
         let mac = KnownMac(alias: "book", host: "book.ts.net", key: secret)
         let reports = [MacReport(mac: mac, state: .unauthorized, name: nil, version: nil)]
-        var all = peerChecks(reports, localVersion: "0.1.0")
+        var all = peerChecks(reports, localVersion: "0.2.0")
         for o: SnapshotOutcome in [.unauthorized, .identityUnavailable, .keyNotSet, .unreachable("x"), .ok(snap(identity: false))] {
-            all += snapshotChecks(o, subject: .remote(alias: "book", host: "book.ts.net", port: 1), localVersion: "0.1.0")
+            all += snapshotChecks(o, subject: .remote(alias: "book", host: "book.ts.net", port: 1), localVersion: "0.2.0")
         }
         all += hostChecks(facts { $0.keyFileExists = false }, daemonExecutable: nil)
         let text = formatDoctor(label: "x", checks: all) + formatHealth(label: "x", checks: all)
@@ -170,7 +214,7 @@ final class HealthTests: XCTestCase {
         XCTAssertTrue(formatDoctor(label: "m", checks: checks(.unauthorized, remote)).contains("shown once"))
         // peer check on a Mac that rejects our key
         let mac = KnownMac(alias: "book", host: "h", key: "k")
-        let peer = peerChecks([MacReport(mac: mac, state: .unauthorized, name: nil, version: nil)], localVersion: "0.1.0")[0]
+        let peer = peerChecks([MacReport(mac: mac, state: .unauthorized, name: nil, version: nil)], localVersion: "0.2.0")[0]
         XCTAssertTrue(peer.why.contains(keyFileNote))
         // host key-file check shows it too
         XCTAssertTrue(formatDoctor(label: "m", checks: hostChecks(facts(), daemonExecutable: nil)).contains(keyFileNote))   // key file present

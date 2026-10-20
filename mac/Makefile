@@ -2,13 +2,31 @@
 SWIFT ?= swift
 PORT  ?= 47821
 
-.PHONY: build test run key check health doctor selftest insert-test permissions install uninstall status logs clean
+.PHONY: stamp restart update verify-running version build test run key check health doctor selftest insert-test permissions install uninstall status logs clean
 
-build:
+# The daemon's version comes from the git tags (../docs/versioning.md); nothing types it in.
+stamp:
+	scripts/stamp-version.sh
+
+version: build
+	.build/release/greenfield-inserter version
+
+build: stamp
 	$(SWIFT) build -c release
 
-test:
+test: stamp
 	$(SWIFT) test
+
+# Restart the installed agent (bootout + bootstrap) and check the running build is the installed file.
+restart: build
+	.build/release/greenfield-inserter restart
+
+verify-running: build
+	.build/release/greenfield-inserter verify-running
+
+# Install a new signed build with verification and rollback: make update FROM=/path/to/signed/greenfield-inserter
+update: build
+	.build/release/greenfield-inserter update --from $(FROM)
 
 # Build and run in the foreground on the tailnet address (Ctrl-C to stop).
 run: build

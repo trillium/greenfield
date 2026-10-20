@@ -143,6 +143,26 @@ macOS keeps matching across rebuilds: `SIGN_IDENTITY="Apple Development: <name> 
 The signing must run where the certificate's private key is available and unlocked (a terminal on that Mac's
 desktop, not a plain ssh session).
 
+## Versions, restart and update
+
+The version is the git tag (`vX.Y.Z`, `../docs/versioning.md`), stamped into the build by `scripts/stamp-version.sh`; no
+version is typed in anywhere. `greenfield-inserter version` prints it with the commit and a hash of the binary, `GET /status`
+reports the RUNNING build (`build`), and `doctor` compares it with the installed file on disk: a daemon that was updated but
+never restarted is reported as "running build is older than installed - restart needed". The compatibility rule between the
+app and the daemon is in [docs/contract.md](docs/contract.md).
+
+```
+make -C mac install                          # build, sign, install, restart, verify the running build; rolls back on failure
+greenfield-inserter update --from FILE       # the same for an already-signed build (SIGNED_BINARY=FILE make install)
+greenfield-inserter restart                  # launchctl bootout + bootstrap, wait until the running build is the installed file
+greenfield-inserter verify-running           # exit 0 only if the running daemon is the installed file
+greenfield-inserter macs restart ALIAS       # over ssh (once: macs ssh ALIAS USER@HOST)
+```
+
+`update` keeps the previous binary as `greenfield-inserter.previous`; if the new build does not come up as itself within
+20 seconds the previous one is put back and restarted, and the command fails saying so. The launchd agent stays
+`RunAtLoad` and `KeepAlive`, and `doctor` flags an agent that is not running or is crash-looping.
+
 ## Logs
 
 `~/.config/greenfield-inserter/inserter.log` (rotated at 2 MB) records start-up, requests, status codes,

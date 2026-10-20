@@ -33,7 +33,7 @@ public protocol RequestLogger {
 /// Other input sources use the same two routes: they differ only in the optional `source`.
 public final class RequestHandler {
     public static let serviceName = "greenfield-inserter"
-    public static let version = "0.1.0"
+    public static var version: String { BuildInfo.version }
     public static let maxTextBytes = 256 * 1024
 
     private let keys: KeyVerifier
@@ -44,6 +44,10 @@ public final class RequestHandler {
     private let listening: () -> [String]
     private let identity: TailnetIdentity?
     private let record: DeliveryRecord?
+    private let clients: ClientRecord?
+    private let version: String
+    private let minClientVersion: String
+    private var build: BuildIdentity { RunningBuild.identity }
     private let logger: RequestLogger?
     private let started: Date
     private let now: () -> Date
@@ -52,7 +56,9 @@ public final class RequestHandler {
 
     public init(keys: KeyVerifier, probe: SystemProbe, inserter: TextInserter, dedupe: DedupeCache = DedupeCache(),
                 name: @escaping () -> String, listening: @escaping () -> [String] = { [] },
-                identity: TailnetIdentity? = nil, record: DeliveryRecord? = nil, logger: RequestLogger? = nil, now: @escaping () -> Date = Date.init) {
+                identity: TailnetIdentity? = nil, record: DeliveryRecord? = nil, clients: ClientRecord? = nil,
+                version: String = BuildInfo.version, minClientVersion: String = BuildInfo.minClientVersion,
+                logger: RequestLogger? = nil, now: @escaping () -> Date = Date.init) {
         self.keys = keys
         self.probe = probe
         self.inserter = inserter
@@ -61,6 +67,9 @@ public final class RequestHandler {
         self.listening = listening
         self.identity = identity
         self.record = record
+        self.clients = clients
+        self.version = version
+        self.minClientVersion = minClientVersion
         self.logger = logger
         self.now = now
         self.started = now()
@@ -80,6 +89,7 @@ public final class RequestHandler {
         }
         // Authorize before revealing anything else, including whether the method is right.
         if let denied = authorize(request) { return denied }
+        if let refused = checkAppVersion(request) { return refused }
         guard request.method == wanted else {
             var r = HTTPResponse.error(405, "method_not_allowed", "use \(wanted)")
             r.headers["Allow"] = wanted
@@ -111,6 +121,30 @@ public final class RequestHandler {
             return .error(401, "unauthorized", "the key was wrong (the key file holds only a hash; use the key shown once by `key create`)")
         }
         return refusal
+    }
+
+    /// The app sends its own version in `X-Greenfield-App`. It is remembered (so health can report on the apps
+    /// seen) and checked against the compatibility rule; a request without the header (curl, the selftest) is let through.
+    private func checkAppVersion(_ request: HTTPRequest) -> HTTPResponse? {
+        guard let v = request.headers["x-greenfield-app"], !v.isEmpty else { return nil }
+        clients?.saw(version: v)
+        let message: String, code: String
+        switch Compat.judge(peer: v, me: version, minPeer: minClientVersion) {
+        case .compatible: return nil
+        case .peerTooOld:
+            code = "app_too_old"
+            message = "this app (\(v)) is too old for this Mac's daemon (\(version); oldest app it works with: \(minClientVersion)). Update the app."
+        case .peerTooNew:
+            code = "app_too_new"
+            message = "this app (\(v)) is newer than this Mac's daemon (\(version)) supports. Update the Mac daemon."
+        case .peerUnreadable:
+            code = "app_version_unreadable"
+            message = "X-Greenfield-App must be a version like 1.2.3, not \"\(v.prefix(40))\"."
+        }
+        var r = HTTPResponse.json(426, ["ok": false, "error": code, "message": message,
+                                        "version": version, "min_client_version": minClientVersion])
+        r.headers["Upgrade"] = "greenfield"
+        return r
     }
 
     /// Same facts as /status plus what only the daemon itself can know, for `health` and `doctor`
@@ -149,7 +183,12 @@ public final class RequestHandler {
         return [
             "ok": true,
             "service": RequestHandler.serviceName,
-            "version": RequestHandler.version,
+            "version": version,
+            "min_client_version": minClientVersion,
+            "build": ["version": build.version, "commit": build.commit, "binary_sha": build.binarySha,
+                      "started_at": build.startedAt ?? ""],
+            "app_compatible": AppCompat.evaluate(clients?.recent() ?? [], me: version, minClient: minClientVersion).json,
+            "clients": (clients?.recent() ?? []).map { ["version": $0.version, "at": ISO8601DateFormatter().string(from: $0.at)] },
             "name": name(),
             "uptime_s": Int(now().timeIntervalSince(started)),
             "secure_input": probe.secureInputEnabled,

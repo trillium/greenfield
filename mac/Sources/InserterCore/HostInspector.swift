@@ -10,6 +10,14 @@ public enum HostInspector {
         let binary = InserterDefaults.installedBinary
         let launchd = run("/bin/launchctl", ["print", "gui/\(getuid())/\(InserterDefaults.launchdLabel)"])
         var pid: Int?
+        var state: String?, runs: Int?
+        if launchd.status == 0 {
+            for raw in launchd.output.split(separator: "\n") {
+                let line = raw.trimmingCharacters(in: .whitespaces)
+                if state == nil, line.hasPrefix("state = ") { state = String(line.dropFirst(8)) }
+                if runs == nil, line.hasPrefix("runs = ") { runs = Int(line.dropFirst(7)) }
+            }
+        }
         if launchd.status == 0, let line = launchd.output.split(separator: "\n").first(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("pid = ") }) {
             pid = Int(line.split(separator: "=").last?.trimmingCharacters(in: .whitespaces) ?? "")
         }
@@ -27,10 +35,11 @@ public enum HostInspector {
             launchdLoaded: launchd.status == 0, launchdPid: pid, installedBinary: binary,
             binaryExecutable: fm.isExecutableFile(atPath: binary), configDir: paths.directory.path,
             dirMode: mode(paths.directory.path), keyFile: paths.keyFile.path, keyFileExists: keyText != nil,
-            keyFileMode: mode(paths.keyFile.path), keyFormatValid: keyValid)
+            keyFileMode: mode(paths.keyFile.path), keyFormatValid: keyValid,
+            launchdState: state, launchdRuns: runs, installedSha: RunningBuild.sha256Prefix(ofFile: binary))
     }
 
-    static func run(_ tool: String, _ args: [String]) -> (status: Int32, output: String) {
+    public static func run(_ tool: String, _ args: [String]) -> (status: Int32, output: String) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: tool)
         p.arguments = args
