@@ -87,3 +87,6 @@ extension XCTestCase {
         return UserDefaults(suiteName: suite)!
     }
 }
+
+/// An agent version on the same line as the app under test, so tests that are not about compatibility keep passing across releases.
+let currentAgentVersion = Compatibility.appVersion?.description ?? "0.0.0"

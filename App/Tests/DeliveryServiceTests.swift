@@ -153,7 +153,7 @@ final class DeliveryServiceTests: XCTestCase {
 
     func testHealthDotStates() {
         XCTAssertEqual(TargetHealth.state(from: .wrongKey), .wrongKey)
-        let plain = ReceiverClient.MacStatus(name: "x", version: "0.1.0")
+        let plain = ReceiverClient.MacStatus(name: "x", version: currentAgentVersion)
         XCTAssertEqual(TargetHealth.state(from: .ready(plain)), .ready(plain))
         var locked = plain
         locked.locked = true

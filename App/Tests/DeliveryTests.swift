@@ -89,9 +89,11 @@ final class ReceiverClientTests: XCTestCase {
     }
 
     func testHealthStates() {
-        let ready = json(["ok": true, "service": "greenfield-inserter", "version": "0.1.0", "name": "MacBook", "screen_locked": false,
+        let ready = json(["ok": true, "service": "greenfield-inserter", "version": currentAgentVersion, "name": "MacBook",
+                          "screen_locked": false,
                           "secure_input": true, "accessibility": false, "inserted_count": 7])
-        let status = ReceiverClient.MacStatus(name: "MacBook", version: "0.1.0", locked: false, secureInput: true, accessibility: false,
+        let status = ReceiverClient.MacStatus(name: "MacBook", version: currentAgentVersion, locked: false, secureInput: true,
+                                              accessibility: false,
                                               insertedCount: 7)
         XCTAssertEqual(ReceiverClient.interpretHealth(status: 200, data: ready), .ready(status))
         XCTAssertEqual(ReceiverClient.interpretHealth(status: 401, data: Data()), .wrongKey)
@@ -248,9 +250,9 @@ final class PresetComputersTests: XCTestCase {
         store.seedPresets("alpha=alpha.example.ts.net")
         let client = ReceiverClient(session: StubURLProtocol.session(), tailnetConnected: { true })
         let health = TargetHealth(service: DeliveryService(outbox: Outbox(url: nil), targets: store, client: client))
-        StubURLProtocol.install { _ in (200, json(["ok": true])) }
+        StubURLProtocol.install { _ in (200, json(["ok": true, "version": currentAgentVersion])) }
         await health.refreshAll()
-        XCTAssertEqual(health.state(for: store.targets[0]), .ready(ReceiverClient.MacStatus()))
+        XCTAssertEqual(health.state(for: store.targets[0]), .ready(ReceiverClient.MacStatus(version: currentAgentVersion)))
         XCTAssertNil(StubURLProtocol.requests.first?.value(forHTTPHeaderField: "X-Dictation-Key"))
     }
 }

@@ -13,7 +13,7 @@ final class HealthReportTests: XCTestCase {
         input.detectorListening = true
         input.tailnetConnected = true
         input.computers = [.init(name: "mini0", address: "mini0.example.ts.net", isActive: true, hasKey: true,
-                                 answer: .ready(ReceiverClient.MacStatus(name: "mini0", version: "0.1.0", insertedCount: 3)))]
+                                 answer: .ready(ReceiverClient.MacStatus(name: "mini0", version: currentAgentVersion, insertedCount: 3)))]
         return input
     }
 
