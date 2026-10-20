@@ -51,6 +51,7 @@ public final class RequestHandler {
     private let identity: TailnetIdentity?
     private let record: DeliveryRecord?
     private let clients: ClientRecord?
+    private let discovery: ComputerDiscovery?
     private let version: String
     private let minClientVersion: String
     private var build: BuildIdentity { RunningBuild.identity }
@@ -62,7 +63,7 @@ public final class RequestHandler {
 
     public init(keys: KeyVerifier, probe: SystemProbe, inserter: TextInserter, dedupe: DedupeCache = DedupeCache(),
                 name: @escaping () -> String, listening: @escaping () -> [String] = { [] },
-                identity: TailnetIdentity? = nil, record: DeliveryRecord? = nil, clients: ClientRecord? = nil,
+                identity: TailnetIdentity? = nil, record: DeliveryRecord? = nil, clients: ClientRecord? = nil, discovery: ComputerDiscovery? = nil,
                 version: String = BuildInfo.version, minClientVersion: String = BuildInfo.minClientVersion,
                 logger: RequestLogger? = nil, now: @escaping () -> Date = Date.init) {
         self.keys = keys
@@ -74,6 +75,7 @@ public final class RequestHandler {
         self.identity = identity
         self.record = record
         self.clients = clients
+        self.discovery = discovery
         self.version = version
         self.minClientVersion = minClientVersion
         self.logger = logger
@@ -89,30 +91,37 @@ public final class RequestHandler {
 
     private func route(_ request: HTTPRequest) -> HTTPResponse {
         if request.path == "/health" { return health(request) }
-        let known = ["/status": "GET", "/text": "POST"]
+        let known = ["/status": "GET", "/text": "POST", "/peers": "GET"]
         guard let wanted = known[request.path] else {
             return .error(404, "not_found", "unknown path")
         }
         // Authorize before revealing anything else, including whether the method is right.
-        if let denied = authorize(request) { return denied }
+        let (denied, via) = authorize(request)
+        if let denied = denied { return denied }
         if let refused = checkAppVersion(request) { return refused }
         guard request.method == wanted else {
             var r = HTTPResponse.error(405, "method_not_allowed", "use \(wanted)")
             r.headers["Allow"] = wanted
             return r
         }
-        return request.path == "/status" ? status() : postText(request)
+        switch request.path {
+        case "/status": return status()
+        case "/peers": return peers(via: via)
+        default: return postText(request)
+        }
     }
 
     /// Who may use the daemon: this Mac itself, any device of the same tailnet user as this Mac's own node
     /// (asked of the local Tailscale), or anyone presenting the optional key. If Tailscale cannot say who is
     /// calling and there is no valid key, the request is refused.
-    private func authorize(_ request: HTTPRequest) -> HTTPResponse? {
-        if request.fromLoopback { return nil }
+    private enum Via { case loopback, sameUser, key }
+
+    private func authorize(_ request: HTTPRequest) -> (HTTPResponse?, Via) {
+        if request.fromLoopback { return (nil, .loopback) }
         var refusal: HTTPResponse
         if let peer = request.peerAddress, let identity = identity {
             switch identity.identify(peer) {
-            case .sameUser: return nil
+            case .sameUser: return (nil, .sameUser)
             case .otherUser(let login):
                 refusal = .error(401, "unauthorized", "this device belongs to a different tailnet user (\(login)) than this Mac")
             case .unknown(let why):
@@ -123,10 +132,20 @@ public final class RequestHandler {
         }
         // The optional key is a second way in, for devices of other users.
         if let presented = request.headers["x-dictation-key"], !presented.isEmpty {
-            if keys.verify(presented) == .ok { return nil }
-            return .error(401, "unauthorized", "the key was wrong (the key file holds only a hash; use the key shown once by `key create`)")
+            if keys.verify(presented) == .ok { return (nil, .key) }
+            return (.error(401, "unauthorized", "the key was wrong (the key file holds only a hash; use the key shown once by `key create`)"), .key)
         }
-        return refusal
+        return (refusal, .key)
+    }
+
+    /// The other Macs of this tailnet user that run the daemon, so a phone needs only one seed. Listing the tailnet is
+    /// for this Mac's own user (or this Mac); a device that got in with the optional key may use /status and /text only.
+    private func peers(via: Via) -> HTTPResponse {
+        guard via != .key else {
+            return .error(403, "peers_need_same_user", "the computer list is only shown to devices of this Mac's tailnet user")
+        }
+        let list = discovery?.computers() ?? []
+        return .json(200, ["ok": true, "peers": list.map { $0.json }])
     }
 
     /// The app sends its own version in `X-Greenfield-App`. It is remembered (so health can report on the apps

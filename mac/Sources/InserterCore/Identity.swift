@@ -105,6 +105,18 @@ public final class TailscaleIdentity: TailnetIdentity {
         return (record, reason)
     }
 
+    private var statusCache: (until: Date, data: Data)?
+
+    /// `tailscale status --json`, cached for a few seconds.
+    public func statusData() -> Data? {
+        lock.lock()
+        if let c = statusCache, c.until > now() { lock.unlock(); return c.data }
+        lock.unlock()
+        guard let r = runner(["status", "--json"]), r.status == 0, !r.output.isEmpty else { return nil }
+        lock.lock(); statusCache = (now().addingTimeInterval(10), r.output); lock.unlock()
+        return r.output
+    }
+
     public func selfLogin() -> String? {
         guard let own = ownAddress() else { return nil }
         return whois(own).0?.login

@@ -143,6 +143,13 @@ macOS keeps matching across rebuilds: `SIGN_IDENTITY="Apple Development: <name> 
 The signing must run where the certificate's private key is available and unlocked (a terminal on that Mac's
 desktop, not a plain ssh session).
 
+## Finding computers
+
+`GET /peers` lists the other Macs of this tailnet user that run the daemon; the daemon also advertises Bonjour
+`_greenfield._tcp` (with the tailnet address in its TXT record), and `greenfield-inserter link` (shown at the end of
+`make install`) prints a `greenfield://add?name=...&address=...` link and a QR code that adds this Mac to the phone with
+no typing. Details and shapes: [docs/contract.md](docs/contract.md).
+
 ## Versions, restart and update
 
 The version is the git tag (`vX.Y.Z`, `../docs/versioning.md`), stamped into the build by `scripts/stamp-version.sh`; no

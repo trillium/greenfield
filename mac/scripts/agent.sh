@@ -82,6 +82,8 @@ PLISTEOF
         echo "installed $LABEL (binary $INSTALLED, log $LOG)"
         "$INSTALLED" version
         "$INSTALLED" verify-running --port "$PORT" --install-to "$INSTALLED"
+        echo
+        "$INSTALLED" link || true
     else
         rm -f "$NEW"
         echo "install did not verify; see the message above (the previous build was restored if there was one)" >&2

@@ -103,6 +103,30 @@ final class ContractTests: XCTestCase {
         }
     }
 
+    func testRecordedPeersSampleMatches() throws {
+        final class Two: ComputerDiscovery {
+            func computers() -> [DiscoveredComputer] {
+                [DiscoveredComputer(name: "Example Mac", address: "example.tail1234.ts.net", version: "0.2.0", isSelf: true),
+                 DiscoveredComputer(name: "Studio Mac", address: "studio.tail1234.ts.net", version: "0.2.1", isSelf: false)]
+            }
+        }
+        let h = RequestHandler(keys: StubKeys(), probe: StubProbe(), inserter: SpyInserter(), name: { "Example Mac" },
+                               identity: Identity(), discovery: Two(), version: "0.2.0", minClientVersion: "0.2.0")
+        let r = h.handle(HTTPRequest(method: "GET", path: "/peers", peerAddress: "100.64.0.20"))
+        XCTAssertEqual(r.status, 200)
+        let actual = (try JSONSerialization.jsonObject(with: r.body) as? [String: Any]) ?? [:]
+        let url = Self.fixtures.appendingPathComponent("peers-two-macs.json")
+        if ProcessInfo.processInfo.environment["RECORD_FIXTURES"] != nil {
+            var wrapped: [String: Any] = ["_comment": "GET /peers from the real handler (ContractTests, RECORD_FIXTURES=1). The phone reads peers[].name, address, version.", "_http_status": 200]
+            for (k, v) in actual { wrapped[k] = v }
+            try JSONSerialization.data(withJSONObject: wrapped, options: [.prettyPrinted, .sortedKeys]).write(to: url)
+            return
+        }
+        var recorded = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
+        recorded["_comment"] = nil; recorded["_http_status"] = nil
+        XCTAssertEqual(NSDictionary(dictionary: recorded), NSDictionary(dictionary: actual))
+    }
+
     func testEverySampleCarriesTheVersionsThePhoneRequires() throws {
         let files = try FileManager.default.contentsOfDirectory(at: Self.fixtures, includingPropertiesForKeys: nil).filter { $0.lastPathComponent.hasPrefix("status-") }
         XCTAssertGreaterThanOrEqual(files.count, 5)

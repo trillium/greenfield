@@ -24,6 +24,7 @@ usage:
                                               own daemon, read them back; prints PASS or FAIL with the fix
   greenfield-inserter macs selftest ALIAS     run that on another Mac over ssh (see `macs ssh`)
   greenfield-inserter macs ssh ALIAS USER@HOST remember how to ssh to that Mac
+  greenfield-inserter link [--no-qr | --dark-terminal]          the greenfield://add link (and a QR code) that adds this Mac to the phone with no typing
   greenfield-inserter version                 the version, commit and binary hash of this file
   greenfield-inserter restart                 bootout + bootstrap the launchd agent; wait until the running build is the installed file
   greenfield-inserter update --from FILE      install a new (signed) build, restart, verify it is the one running; roll back if it does not come up
@@ -58,13 +59,26 @@ case "serve":
     let nameOverride = option("--name", in: args)
     try? paths.ensureDirectory()
     let logger = FileLogger(file: paths.logFile, echoToStderr: args.contains("--log-stderr"))
+    let tailscale = TailscaleIdentity()
+    let discovery = TailnetDiscovery(
+        statusJSON: { tailscale.statusData() },
+        probe: { node in
+            if case .ok(let s) = InserterClient.snapshot(host: node.ip, port: Int(port), key: nil, path: "/status", timeout: 1.5) { return s }
+            return nil
+        },
+        myName: { nameOverride ?? macName.current() }, myVersion: BuildInfo.version)
     var server: HTTPServer!
     let handler = RequestHandler(keys: keys, probe: MacSystemProbe(), inserter: MacInserter(),
                                  name: { nameOverride ?? macName.current() }, listening: { server.listening() },
-                                 identity: TailscaleIdentity(), record: DeliveryLedger(paths: paths), clients: ClientLedger(paths: paths), logger: logger)
+                                 identity: tailscale, record: DeliveryLedger(paths: paths), clients: ClientLedger(paths: paths), discovery: discovery, logger: logger)
     logger.log("starting \(RequestHandler.serviceName) \(RequestHandler.version) name=\(nameOverride ?? macName.current())")
     logger.log("authorization: loopback, same tailnet user\(keys.isConfigured ? ", or the optional key" : "") (no key needed)")
     if !MacSystemProbe().accessibilityTrusted { logger.log("Accessibility not granted; run `greenfield-inserter permissions`") }
+    if !args.contains("--no-bonjour") {
+        // the service record carries the tailnet name, because the daemon is not reachable on the LAN itself
+        let ownAddress = tailscale.statusData().flatMap(TailnetStatus.parse)?.me.dnsName ?? Tailnet.ipv4() ?? "unknown"
+        BonjourAdvertiser().start(name: nameOverride ?? macName.current(), address: ownAddress, version: BuildInfo.version, port: Int(port), log: { logger.log($0) })
+    }
     MacSystemProbe.restartWhenAccessibilityIsGranted { logger.log($0) }
     server = HTTPServer(target: target, port: port, handler: handler, logger: logger)
     server.run()
@@ -138,6 +152,14 @@ case "health", "doctor":
         print(formatHealth(label: label, checks: checks))
     }
     exit(isHealthy(checks) ? 0 : 1)
+
+case "link":
+    let tailscale = TailscaleIdentity()
+    let address = tailscale.statusData().flatMap(TailnetStatus.parse)?.me.dnsName ?? Tailnet.ipv4()
+    guard let address = address else { fail("this Mac has no tailnet address; is Tailscale running?") }
+    let link = AddLink.make(name: macName.current(), address: address)
+    print("Add \(macName.current()) to the phone: open this link on the phone, or scan the code.\n\n  \(link)\n")
+    if !args.contains("--no-qr"), let qr = terminalQR(link, forDarkTerminal: args.contains("--dark-terminal")) { print(qr) }
 
 case "version", "--version", "-v":
     let exe = Bundle.main.executablePath ?? CommandLine.arguments[0]

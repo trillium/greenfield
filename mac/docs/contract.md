@@ -37,6 +37,20 @@ answers now carry `delivery` and can be 502.
 Other statuses of `POST /text`: 401 (a device of a different tailnet user, or a wrong key), 409 `secure_input`, 423
 `screen_locked`, 502 `not_delivered`, 503 `accessibility_not_granted` or `identity_unavailable`.
 
+## Finding computers (discovery)
+
+A phone needs only one seed; it then lists every compatible Mac.
+
+- `GET /peers` returns `{"ok": true, "peers": [{"name", "address", "version", "self"}]}`: this Mac and every other online macOS
+  device of the SAME tailnet user whose daemon answers `GET /status` (`address` is the MagicDNS name, `name` the Mac's own name,
+  `version` its daemon version). Only the Mac's own tailnet user (or this Mac) may ask: a device that got in with the optional
+  key gets 403 `peers_need_same_user`. The answer is cached for 20 seconds. Fixture: `mac/Tests/Fixtures/peers-two-macs.json`.
+- Bonjour: the daemon advertises `_greenfield._tcp` on port 47821 with TXT records `name`, `address` (the tailnet name to
+  connect to: the daemon itself listens only on the tailnet and loopback, so the LAN address Bonjour resolves is not usable),
+  `version` and `path=/status`.
+- `greenfield://add?name=<name>&address=<magicdns name>` adds one Mac with no typing. `greenfield-inserter link` prints it and a
+  QR code (`--dark-terminal` inverts the code for a dark terminal; `--no-qr` omits it); `make install` shows it at the end.
+
 ## Verdict, per computer
 
 - *compatible*: the rule holds and neither minimum is violated.

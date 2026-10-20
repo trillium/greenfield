@@ -3,6 +3,13 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: `docs/versioning.md`. The repository has one
 version line; entries here are the daemon's part of each release.
 
+## [0.2.3] - 2026-10-20
+
+### Added
+- `GET /peers`: the other Macs of the same tailnet user that run the daemon (`{peers:[{name,address,version}]}`), so the phone
+  needs only one seed; a Bonjour `_greenfield._tcp` advertisement carrying the tailnet address; the `greenfield://add` link and a
+  terminal QR code (`greenfield-inserter link`, also shown by `make install`). Additive, so the 0.2 line stays compatible.
+
 ## [0.2.2] - 2026-10-20
 
 ### Fixed
