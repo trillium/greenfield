@@ -1,17 +1,17 @@
 # Greenfield (working name)
 
-An iPhone dictation app: hold a button, speak, and the text is transcribed on the phone by NVIDIA's Parakeet speech model, then sent over your private network to the Mac you choose. No audio leaves the phone. SwiftUI, iOS 17+, MIT.
+An iPhone dictation app: tap a button (or make a sound), speak, and the text is transcribed on the phone by NVIDIA's Parakeet speech model, then sent over your private network to the Mac you choose. No audio leaves the phone. SwiftUI, iOS 17+, MIT.
 
 The name (Greenfield for now), repo and bundle id are not decided. They are working values in one file, `Config/Base.xcconfig` (`APP_NAME`, `DISPLAY_NAME`, `PRODUCT_BUNDLE_IDENTIFIER`), so each is a one-line change.
 
 Non-speech sounds (tongue clicks, pops, kitty-cmere) start and end dictation through a small editable list of rules, using the same microphone tap and replaceable model packs (`docs/sounds.md`).
 
 ## What it does
-- **Dictate**: the screen shows the flow state (Idle, Dictating, Review), the last sound heard and a text box. Default rules: kitty-cmere twice starts dictation; a tongue click ends it and writes the text into the box; another tongue click submits it to the active Mac. The hold-to-talk button is the fallback.
+- **Dictate**: the screen shows the flow state (Idle, Dictating, Review), the last sound heard and a text box. Default rules: kitty-cmere twice starts dictation (also again when text is already in the box, which adds to its end); a tongue click ends it and writes the text into the box; another tongue click submits it to the active computer. The microphone button taps to start and taps to stop, on the same state.
 - **Sounds**: live list of every sound the detector recognises, the rule editor, and model packs (install, switch, remove).
-- **Outbox**: every transcript is kept until a Mac has it. Resend with a swipe; the same id is reused, so a Mac that already typed it will not type it twice.
-- **Macs**: the list of Macs on your tailnet the phone can send to, each with its own key (in the iPhone Keychain) and a reachability dot. Text goes to exactly one Mac, the selected one.
-- **About > Attribution**: credit for the speech model and libraries (CC BY 4.0 and Apache-2.0).
+- **Outbox**: every submitted text is kept until a computer has it, with its target and the plain reason it is waiting, and a Retry button; the same id is reused, so a Mac that already typed it will not type it twice.
+- **Computers**: the list of Macs on your tailnet the phone can send to, each with its own key (in the iPhone Keychain) and a reachability dot. Text goes to exactly one Mac, the selected one.
+- **Help**: Health (checks everything and says how to fix it), Diagnostics (recent events), About and Attribution: credit for the speech model and libraries (CC BY 4.0 and Apache-2.0).
 
 ## Layout
 - `App/Sources/Audio`: the microphone. One `AVAudioEngine` tap (`AudioCapture`) publishes 16 kHz mono PCM on a `SampleBus` so several consumers can share it. Also an energy `Endpointer`, the `ListenMachine` state machine, `BackgroundGrace` and `CaptureHeartbeat`.
