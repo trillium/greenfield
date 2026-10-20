@@ -166,14 +166,14 @@ public enum InserterClient {
 
     struct NetworkError: Error { var message: String }
 
-    private static func request(_ mac: KnownMac, method: String, path: String, body: Data?,
-                                timeout: TimeInterval) -> Result<(Int, Data), NetworkError> {
+    fileprivate static func request(_ mac: KnownMac, method: String, path: String, body: Data?,
+                                    timeout: TimeInterval, sendKey: Bool = true) -> Result<(Int, Data), NetworkError> {
         guard let url = URL(string: "http://\(mac.host):\(mac.port)\(path)") else {
             return .failure(NetworkError(message: "bad host"))
         }
         var req = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: timeout)
         req.httpMethod = method
-        req.setValue(mac.key, forHTTPHeaderField: "X-Dictation-Key")
+        if sendKey { req.setValue(mac.key, forHTTPHeaderField: "X-Dictation-Key") }
         if let body = body { req.httpBody = body; req.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         let sem = DispatchSemaphore(value: 0)
         var result: Result<(Int, Data), NetworkError> = .failure(NetworkError(message: "no response"))
@@ -209,4 +209,24 @@ func formatTable(_ reports: [MacReport]) -> String {
     return rows.map { row in
         row.enumerated().map { i, cell in i == 4 ? cell : cell.padding(toLength: widths[i], withPad: " ", startingAt: 0) }.joined(separator: "  ")
     }.joined(separator: "\n")
+}
+
+extension InserterClient {
+    /// Fetches what a daemon says about itself: /status with the key from elsewhere, or /health
+    /// (no key) on this Mac's loopback.
+    public static func snapshot(host: String, port: Int, key: String?, path: String, timeout: TimeInterval = 4) -> SnapshotOutcome {
+        let probe = KnownMac(alias: "-", host: host, port: port, key: key ?? "")
+        switch request(probe, method: "GET", path: path, body: nil, timeout: timeout, sendKey: key != nil) {
+        case .failure(let e): return .unreachable(e.message)
+        case .success(let (code, body)):
+            switch code {
+            case 200: return DaemonSnapshot.parse(body).map { .ok($0) } ?? .unexpected(200)
+            case 401: return .unauthorized
+            case 403: return .forbidden
+            case 503 where (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["error"] as? String == "key_not_configured":
+                return .keyNotSet
+            default: return .unexpected(code)
+            }
+        }
+    }
 }

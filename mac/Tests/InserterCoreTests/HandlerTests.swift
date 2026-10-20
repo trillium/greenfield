@@ -87,6 +87,27 @@ final class HandlerTests: XCTestCase {
         XCTAssertEqual(o["listen"] as? [String], ["100.84.99.99:47821", "127.0.0.1:47821"])
     }
 
+    // MARK: /health
+
+    func testHealthIsLoopbackOnlyAndNeedsNoKey() {
+        let local = handler.handle(HTTPRequest(method: "GET", path: "/health", fromLoopback: true))
+        XCTAssertEqual(local.status, 200)
+        let o = object(local)
+        XCTAssertEqual(o["key_configured"] as? Bool, true)
+        XCTAssertNotNil(o["pid"]); XCTAssertNotNil(o["executable"]); XCTAssertNotNil(o["listen"])
+        // A request that arrives over the network is refused even with a valid key.
+        let remote = handler.handle(HTTPRequest(method: "GET", path: "/health", headers: ["x-dictation-key": "good"]))
+        XCTAssertEqual(remote.status, 403)
+        XCTAssertEqual(handler.handle(HTTPRequest(method: "POST", path: "/health", fromLoopback: true)).status, 405)
+    }
+
+    func testHealthReportsMissingKeyAndNeverEchoesKeys() {
+        keys.result = .notConfigured
+        let r = handler.handle(HTTPRequest(method: "GET", path: "/health", headers: ["x-dictation-key": "good"], fromLoopback: true))
+        XCTAssertEqual(object(r)["key_configured"] as? Bool, false)
+        XCTAssertFalse(String(data: r.body, encoding: .utf8)!.contains("good"))
+    }
+
     // MARK: auth
 
     func testMissingAndWrongKeyAre401() {

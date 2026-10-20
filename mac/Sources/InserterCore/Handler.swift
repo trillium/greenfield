@@ -67,6 +67,7 @@ public final class RequestHandler {
     }
 
     private func route(_ request: HTTPRequest) -> HTTPResponse {
+        if request.path == "/health" { return health(request) }
         let known = ["/status": "GET", "/text": "POST"]
         guard let wanted = known[request.path] else {
             return .error(404, "not_found", "unknown path")
@@ -86,11 +87,25 @@ public final class RequestHandler {
         return request.path == "/status" ? status() : postText(request)
     }
 
-    private func status() -> HTTPResponse {
+    /// Same facts as /status plus what only the daemon itself can know, for `health` and `doctor`
+    /// run on this Mac. No key needed because it answers loopback peers only and holds nothing secret.
+    private func health(_ request: HTTPRequest) -> HTTPResponse {
+        guard request.fromLoopback else { return .error(403, "local_only", "/health is only for requests from this Mac") }
+        guard request.method == "GET" else { return .error(405, "method_not_allowed", "use GET") }
+        var body = statusFields()
+        body["key_configured"] = keys.verify(nil) != .notConfigured
+        body["pid"] = Int(ProcessInfo.processInfo.processIdentifier)
+        body["executable"] = Bundle.main.executablePath ?? ""
+        return .json(200, body)
+    }
+
+    private func status() -> HTTPResponse { .json(200, statusFields()) }
+
+    private func statusFields() -> [String: Any] {
         insertLock.lock()
         let count = insertedCount
         insertLock.unlock()
-        return .json(200, [
+        return [
             "ok": true,
             "service": RequestHandler.serviceName,
             "version": RequestHandler.version,
@@ -101,7 +116,7 @@ public final class RequestHandler {
             "accessibility": probe.accessibilityTrusted,
             "inserted_count": count,
             "listen": listening(),
-        ])
+        ]
     }
 
     private func postText(_ request: HTTPRequest) -> HTTPResponse {

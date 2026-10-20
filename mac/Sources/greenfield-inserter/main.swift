@@ -16,6 +16,9 @@ usage:
   greenfield-inserter macs check              GET /status on every remembered Mac: name, version, locked / secure input
   greenfield-inserter macs test [ALIAS] [--text STR]
                                               insert a harmless test string into that Mac's focused app
+  greenfield-inserter health [--port N]       fast yes/no for this Mac's daemon; exit 0 only if everything is good
+  greenfield-inserter doctor [--port N]       slower; for each failed check says what is wrong, why it matters and the fix
+  greenfield-inserter macs health | doctor    the same for every remembered Mac, seen from here
   greenfield-inserter permissions             check Accessibility; ask macOS to prompt if missing
 
 environment: GREENFIELD_INSERTER_HOME overrides ~/.config/greenfield-inserter
@@ -93,6 +96,28 @@ case "name":
     default: fail(usage, code: 2)
     }
 
+case "health", "doctor":
+    let port = Int(option("--port", in: args) ?? String(InserterDefaults.port)) ?? 0
+    guard port > 0, port < 65536 else { fail("bad --port", code: 2) }
+    let outcome = InserterClient.snapshot(host: "127.0.0.1", port: port, key: nil, path: "/health")
+    var checks = snapshotChecks(outcome, subject: .local(port: port), localVersion: RequestHandler.version)
+    let label = macName.current()
+    if args[0] == "doctor" {
+        var exe: String?
+        if case .ok(let s) = outcome { exe = s.executable }
+        checks = hostChecks(HostInspector.gather(paths: paths), daemonExecutable: exe) + checks
+        let peers = MacRegistry(paths: paths).load()
+        if !peers.isEmpty {
+            checks += peerChecks(peers.map { InserterClient.check($0) }, localVersion: RequestHandler.version)
+        } else {
+            checks.append(HealthCheck("peers", "Other Macs reachable from here", .pass, detail: "none configured (`macs add` to add one)"))
+        }
+        print(formatDoctor(label: label, checks: checks))
+    } else {
+        print(formatHealth(label: label, checks: checks))
+    }
+    exit(isHealthy(checks) ? 0 : 1)
+
 case "macs":
     let registry = MacRegistry(paths: paths)
     let all = registry.load()
@@ -127,6 +152,23 @@ case "macs":
         for m in all { print("\(m.alias)  \(m.host):\(m.port)") }
     case "show-key":
         print(find(args.count >= 3 ? args[2] : nil).key)
+    case "health", "doctor":
+        guard !all.isEmpty else { fail("no Macs yet; add one with `macs add ALIAS HOST`") }
+        var results = [(String, [HealthCheck])?](repeating: nil, count: all.count)
+        let lock = NSLock()
+        DispatchQueue.concurrentPerform(iterations: all.count) { i in
+            let m = all[i]
+            let outcome = InserterClient.snapshot(host: m.host, port: m.port, key: m.key, path: "/status")
+            var label = m.alias
+            if case .ok(let s) = outcome { label += " (\(s.name))" }
+            let checks = snapshotChecks(outcome, subject: .remote(alias: m.alias, host: m.host, port: m.port), localVersion: RequestHandler.version)
+            lock.lock(); results[i] = (label, checks); lock.unlock()
+        }
+        let done = results.compactMap { $0 }
+        let doctor = args[1] == "doctor"
+        print(done.map { doctor ? formatDoctor(label: $0.0, checks: $0.1) : formatHealth(label: $0.0, checks: $0.1) }
+            .joined(separator: doctor ? "\n\n" : "\n"))
+        exit(done.allSatisfy { isHealthy($0.1) } ? 0 : 1)
     case "check":
         guard !all.isEmpty else { fail("no Macs yet; add one with `macs add ALIAS HOST`") }
         var reports = [MacReport?](repeating: nil, count: all.count)

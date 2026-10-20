@@ -76,6 +76,23 @@ daemon's own files; `macs show-key ALIAS` prints one when you need to enter it i
 without the key passing through the session: `ssh mac 'greenfield-inserter key create --out-file k'`, then pipe
 the file into `macs add ... --key-stdin` and delete it.
 
+## Health and doctor
+
+```
+greenfield-inserter health          # this Mac: fast yes/no, exit 0 only if everything is good
+greenfield-inserter doctor          # this Mac: for each failed check, what is wrong, why it matters, the exact fix
+greenfield-inserter macs health     # the same for every remembered Mac, as seen from here
+greenfield-inserter macs doctor
+make -C mac health                  # (or doctor)
+```
+
+Both work over ssh (use the full path `~/.local/share/greenfield-inserter/greenfield-inserter`). `health` checks: daemon
+running, listening on the tailnet address and loopback only, key set, Accessibility granted, screen not locked,
+no secure input, version. `doctor` adds the launchd agent file and whether it is loaded and running, the binary
+path (the Accessibility approval belongs to it), key file and directory permissions, a tailnet address, whether
+the running daemon is the installed binary, and whether each remembered Mac is reachable from here. Locally these ask the daemon's loopback-only `GET /health` (no key, 403 to
+anyone off the Mac); for remembered Macs they use `GET /status` with the saved key. Keys are never printed.
+
 ## Logs
 
 `~/.config/greenfield-inserter/inserter.log` (rotated at 2 MB) records start-up, requests, status codes,

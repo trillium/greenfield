@@ -6,10 +6,14 @@ public struct HTTPRequest: Equatable {
     /// Header names are lowercased.
     public var headers: [String: String]
     public var body: Data
+    /// True when the TCP peer is on this Mac (set by the server, never taken from the request).
+    public var fromLoopback: Bool
 
-    public init(method: String, path: String, headers: [String: String] = [:], body: Data = Data()) {
+    public init(method: String, path: String, headers: [String: String] = [:], body: Data = Data(),
+                fromLoopback: Bool = false) {
         self.method = method
         self.path = path
+        self.fromLoopback = fromLoopback
         self.headers = Dictionary(uniqueKeysWithValues: headers.map { ($0.key.lowercased(), $0.value) })
         self.body = body
     }
@@ -51,6 +55,7 @@ public struct HTTPResponse: Equatable {
         case 200: return "OK"
         case 400: return "Bad Request"
         case 401: return "Unauthorized"
+        case 403: return "Forbidden"
         case 404: return "Not Found"
         case 405: return "Method Not Allowed"
         case 408: return "Request Timeout"

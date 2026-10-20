@@ -142,6 +142,15 @@ public final class HTTPServer {
         }
     }
 
+    private func isLoopbackPeer(_ fd: Int32) -> Bool {
+        var addr = sockaddr_in()
+        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let ok = withUnsafeMutablePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getpeername(fd, $0, &len) == 0 }
+        }
+        return ok && addr.sin_family == sa_family_t(AF_INET) && UInt32(bigEndian: addr.sin_addr.s_addr) >> 24 == 127
+    }
+
     private func handle(_ fd: Int32) {
         defer { close(fd) }
         var one: Int32 = 1
@@ -155,7 +164,9 @@ public final class HTTPServer {
         var response: HTTPResponse?
         while response == nil {
             switch HTTPParser.parse(buffer) {
-            case .complete(let request): response = handler.handle(request)
+            case .complete(var request):
+                request.fromLoopback = isLoopbackPeer(fd)
+                response = handler.handle(request)
             case .invalid(let r): response = r
             case .incomplete:
                 let n = read(fd, &chunk, chunk.count)
