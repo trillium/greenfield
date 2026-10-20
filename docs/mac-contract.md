@@ -2,13 +2,37 @@
 
 The phone sends text to a small agent on each Mac, `greenfield-inserter` (its own project; protocol and setup in its `mac/README.md`), which inserts the text at the cursor of the focused app. This page is the phone's side: which parts of that API the app uses and how it reads the answers. `tools/stub-receiver/receiver.py` speaks the same API without inserting anything, for tests.
 
+## Versions and compatibility
+The app and the agent are versioned with real semver, `MAJOR.MINOR.PATCH`, taken from the newest `vX.Y.Z` git tag of this repository by `scripts/version.sh` (see `docs/versioning.md`); nothing in either program types a version in by hand. The version is the compatibility contract.
+
+**Rule.** While MAJOR is 0, the MINOR of the app and the MINOR of the agent must match (patch is free). From 1.0.0, the MAJOR must match (minor and patch are free). A wire change that breaks the other side bumps MINOR while MAJOR is 0, and MAJOR from 1.0.0 on.
+
+**Each side also declares the oldest peer it works with**, `min_peer_version`. The agent reports it in `GET /status` as `min_client_version`; the app declares `GREENFIELD_MIN_PEER_VERSION` in `Config/Base.xcconfig` (the oldest agent). A peer older than that is incompatible even if the rule alone would accept it.
+
+| Where | Field | Meaning |
+|---|---|---|
+| every request, header | `X-Greenfield-App: <semver>` | the app's own version; the agent remembers the last few clients (version and time) it has seen |
+| `GET /status` | `version` | the agent's version |
+| `GET /status` | `min_client_version` | the oldest app the agent accepts |
+| `GET /status` | `app_compatible` (optional) | the Mac's own view of the clients it has seen: `{"ok": bool, "message": "...", "fix": "..."}` |
+| any route | HTTP 426 | the app is older than `min_client_version` or fails the rule; the body says so in plain words |
+
+**Verdict, per computer** (phone Health; the agent's `health` and `doctor` apply the same rule to the clients they have seen):
+- *compatible*: the rule holds and neither minimum is violated.
+- *update the Mac daemon*: the agent is older than the app's minimum, is on an older line than the app, or states no version at all (it predates this contract).
+- *update the app*: the app is older than the agent's `min_client_version`, or the agent is on a newer line than the app.
+
+A Mac that no app has connected to yet is a note, never a failure.
+
+**Contract tests.** Each side parses the other side's recorded samples. The phone records what it sends in `App/Tests/Fixtures/request-*.json` (the phone's tests check the real client still produces exactly those fields); the Mac records what the daemon answers in `mac/Tests/Fixtures/status-*.json` (the phone's tests parse every file there and require a semver `version` and `min_client_version`).
+
 ## Transport and trust
 - Port `47821`. Plain HTTP over the tailnet. The trust boundary is tailnet membership: the agent trusts callers by their tailnet identity, so the app needs no key and the preset computers work out of the box. The app can still send an optional key in the `X-Dictation-Key` header (Computers > edit > Advanced; never in a URL, a log or the repository; kept in the iPhone Keychain, this device only). A 401 is shown as "this computer asks for a key" only when the agent asks for one.
 - iOS App Transport Security allows plain http to `*.ts.net` (subdomains included) and to local short names; there is no blanket exception. 100.x tailnet addresses are sent over a plain TCP transport (`HTTPTransport.swift`) because ATS cannot allow an address range. Before sending to a tailnet name or address the app checks that the phone is on the tailnet and says so if it is not.
 - Audio never leaves the phone. Only text is sent.
 
 ## `GET /status`
-Used for the status line and dot beside each computer. The app reads `name`, `version`, `screen_locked`, `secure_input`, `accessibility` and `inserted_count`:
+Used for the status line and dot beside each computer. The app reads `name`, `version`, `min_client_version`, `app_compatible`, `screen_locked`, `secure_input`, `accessibility` and `inserted_count`:
 
 | Answer | Shown as |
 |---|---|

@@ -19,6 +19,8 @@
 			</array>
 		</dict>
 	</array>
+	<key>GreenfieldMinPeerVersion</key>
+	<string>$(GREENFIELD_MIN_PEER_VERSION)</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>The microphone is used to turn what you say into text. Audio is transcribed on this phone and never leaves it; only the resulting text is sent, to the Mac you choose.</string>
 	<key>NSLocalNetworkUsageDescription</key>

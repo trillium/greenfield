@@ -66,6 +66,8 @@ final class AppModel {
                                   hasKey: !(targets.key(for: target) ?? "").isEmpty, answer: health.answers[target.id])
         }
         input.queued = outbox.pending.count
+        input.appVersion = Compatibility.appVersion
+        input.minimumAgent = Compatibility.minimumAgent
         return input
     }
 

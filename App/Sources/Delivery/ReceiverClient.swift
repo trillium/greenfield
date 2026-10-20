@@ -22,6 +22,8 @@ struct ReceiverClient: Sendable {
         case invalidText = "bad_request"
         case tooLarge = "too_large"
         case insertFailed = "insert_failed"
+        /// 426: the agent needs a newer app than this one.
+        case clientTooOld = "upgrade_required"
         case other
 
         var message: String {
@@ -34,6 +36,7 @@ struct ReceiverClient: Sendable {
             case .invalidText: return "The computer rejected the text."
             case .tooLarge: return "The text is too long for the computer to accept."
             case .insertFailed: return "The computer could not insert the text."
+            case .clientTooOld: return "This app is too old for that computer. Update the app."
             case .other: return "The computer refused the text."
             }
         }
@@ -49,6 +52,10 @@ struct ReceiverClient: Sendable {
         var insertedCount = 0
         /// The agent's own answer to "can it actually insert text?", when it reports one (absent on older agents).
         var delivery: DeliveryLine?
+        /// The agent's `min_client_version`: the oldest app it accepts (nil on agents that predate it).
+        var minClientVersion: String?
+        /// The Mac's own view of whether the clients it has seen are compatible, when it reports one.
+        var appCompatibility: DeliveryLine?
     }
 
     /// "Can actually insert text": yes or no, in the agent's words, with its fix text.
@@ -100,6 +107,7 @@ struct ReceiverClient: Sendable {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let key, !key.isEmpty { request.setValue(key, forHTTPHeaderField: "X-Dictation-Key") }
+        Self.stamp(&request)
         let payload: [String: String] = ["id": id.uuidString, "text": text, "source": "greenfield"]
         guard let body = try? JSONSerialization.data(withJSONObject: payload), body.count <= Self.maxBody else {
             return (.refused(.tooLarge), 0)
@@ -118,6 +126,7 @@ struct ReceiverClient: Sendable {
     func peers(of base: URL, key: String?) async -> [DiscoveredComputer]? {
         var request = URLRequest(url: base.appendingPathComponent("peers"))
         if let key, !key.isEmpty { request.setValue(key, forHTTPHeaderField: "X-Dictation-Key") }
+        Self.stamp(&request)
         if offTailnet(base) { return nil }
         guard let (status, data) = try? await route(for: base).send(request), status == 200 else { return nil }
         return PeerDirectory.parsePeers(data)
@@ -126,6 +135,7 @@ struct ReceiverClient: Sendable {
     func health(of base: URL, key: String?) async -> Health {
         var request = URLRequest(url: base.appendingPathComponent("status"))
         if let key, !key.isEmpty { request.setValue(key, forHTTPHeaderField: "X-Dictation-Key") }
+        Self.stamp(&request)
         if offTailnet(base) { return .unreachable(Tailnet.notConnectedMessage) }
         do {
             let (status, data) = try await route(for: base).send(request)
@@ -142,8 +152,10 @@ struct ReceiverClient: Sendable {
                               delivery: json["delivery"] as? String)
         }
         if let error = json["error"] as? String, let refusal = Refusal(rawValue: error) { return .refused(refusal) }
-        let byStatus: [Int: Refusal] = [401: .badKey, 409: .secureInput, 413: .tooLarge, 423: .locked, 400: .invalidText, 422: .invalidText,
-                                        503: .needsAccessibility, 500: .insertFailed]
+        let byStatus: [Int: Refusal] = [
+            426: .clientTooOld, 401: .badKey, 409: .secureInput, 413: .tooLarge, 423: .locked, 400: .invalidText, 422: .invalidText,
+            503: .needsAccessibility, 500: .insertFailed
+        ]
         if let refusal = byStatus[status] { return .refused(refusal) }
         if status == 200 { return .unreachable("The computer answered 200 without an ok body: it is not a text receiver.") }
         return .unreachable("The computer answered HTTP \(status).")
@@ -165,7 +177,9 @@ struct ReceiverClient: Sendable {
                                 locked: json["screen_locked"] as? Bool ?? json["locked"] as? Bool ?? false,
                                 secureInput: json["secure_input"] as? Bool ?? false,
                                 accessibility: json["accessibility"] as? Bool ?? true,
-                                insertedCount: json["inserted_count"] as? Int ?? 0, delivery: deliveryLine(json)))
+                                insertedCount: json["inserted_count"] as? Int ?? 0, delivery: deliveryLine(json),
+                                minClientVersion: json["min_client_version"] as? String,
+                                appCompatibility: compatibilityLine(json)))
     }
 
     /// Reads the agent's insertion line leniently: a `delivery` object (`ok`/`can_insert`, `message`/`text`/`summary`, `fix`), or a
@@ -187,6 +201,25 @@ struct ReceiverClient: Sendable {
                                 fix: words(json, ["delivery_fix"]))
         }
         return nil
+    }
+
+    /// The Mac's view of app compatibility: an `app_compatible` object (`ok`, `message`, `fix`) or a flag with `app_compat_message`.
+    static func compatibilityLine(_ json: [String: Any]) -> DeliveryLine? {
+        let fallback = { (ok: Bool) in ok ? "App compatible" : "App not compatible" }
+        if let object = json["app_compatible"] as? [String: Any], let ok = (object["ok"] as? Bool) ?? (object["compatible"] as? Bool) {
+            let message = ["message", "text", "summary"].compactMap { object[$0] as? String }.first ?? fallback(ok)
+            return DeliveryLine(works: ok, message: message, fix: object["fix"] as? String)
+        }
+        if let ok = json["app_compatible"] as? Bool {
+            let message = json["app_compat_message"] as? String ?? fallback(ok)
+            return DeliveryLine(works: ok, message: message, fix: json["app_compat_fix"] as? String)
+        }
+        return nil
+    }
+
+    /// Every request says which app version it comes from; the agent remembers the last few clients it has seen.
+    static func stamp(_ request: inout URLRequest) {
+        if let version = Compatibility.appVersion { request.setValue(version.description, forHTTPHeaderField: Compatibility.appHeader) }
     }
 
     static func describe(_ error: Error) -> String {

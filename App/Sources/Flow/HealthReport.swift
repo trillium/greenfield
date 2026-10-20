@@ -40,6 +40,9 @@ struct HealthInputs {
     var tailnetConnected = true
     var computers: [Computer] = []
     var queued = 0
+    /// This app's own version and the oldest agent it works with (nil in tests that do not care).
+    var appVersion: Semver?
+    var minimumAgent: Semver?
 }
 
 enum HealthReport {
@@ -142,7 +145,7 @@ enum HealthReport {
             return [HealthItem(id: "computers", title: "Computers", level: .problem, detail: "No computer is set up, so there is nowhere to send text.",
                                fix: "Add one in the Computers tab: its tailnet name and its key.")]
         }
-        var items = input.computers.map(computer)
+        var items = input.computers.map { computer($0, app: input.appVersion, minimumAgent: input.minimumAgent) }
         if !input.computers.contains(where: \.isActive) {
             items.append(HealthItem(id: "active", title: "Active computer", level: .problem, detail: "No computer is chosen to receive text.",
                                     fix: "Tap a computer in the Computers tab to make it the active one."))
@@ -150,7 +153,7 @@ enum HealthReport {
         return items
     }
 
-    static func computer(_ computer: HealthInputs.Computer) -> HealthItem {
+    static func computer(_ computer: HealthInputs.Computer, app: Semver? = nil, minimumAgent: Semver? = nil) -> HealthItem {
         let title = computer.name + (computer.isActive ? " (active)" : "")
         let id = "computer-" + computer.name
         let agent = "greenfield-inserter"
@@ -158,7 +161,8 @@ enum HealthReport {
             return HealthItem(id: id, title: title, level: .warning, detail: "Not checked yet.", fix: "Tap Check again.")
         }
         switch answer {
-        case .ready(let status): return ready(status, id: id, title: title, name: computer.name)
+        case .ready(let status):
+            return ready(status, of: computer, id: id, title: title, versions: (app, minimumAgent))
         case .wrongKey where computer.hasKey:
             return HealthItem(id: id, title: title, level: .problem, detail: "The computer is reachable but refuses the key saved for it.",
                               fix: "Open the computer under Computers > Advanced and remove the saved key (computers on the tailnet need none), or enter the right one.")
@@ -176,8 +180,27 @@ enum HealthReport {
         }
     }
 
-    private static func ready(_ status: ReceiverClient.MacStatus, id: String, title: String, name: String) -> HealthItem {
+    private static func ready(_ status: ReceiverClient.MacStatus, of computer: HealthInputs.Computer, id: String, title: String,
+                              versions: (app: Semver?, minimumAgent: Semver?)) -> HealthItem {
+        let (app, minimumAgent, name) = (versions.app, versions.minimumAgent, computer.name)
         let agent = status.version.isEmpty ? "" : " (agent \(status.version))"
+        let appText = app.map { "\($0)" } ?? "unknown"
+        let verdict = Compatibility.judge(app: app, agent: status.version, minClient: status.minClientVersion, minimumAgent: minimumAgent)
+        switch verdict {
+        case .updateAgent:
+            return HealthItem(id: id, title: title, level: .problem,
+                              detail: "Update the Mac daemon: it is \(status.version.isEmpty ? "too old to state a version" : "version \(status.version)"), and this app (\(appText)) needs \(minimumAgent.map { "\($0) or newer" } ?? "a newer one") on the same line.",
+                              fix: "On \(name) install the current greenfield-inserter (`make -C mac install`), then Check again.")
+        case .updateApp:
+            return HealthItem(id: id, title: title, level: .problem,
+                              detail: "Update the app: this app is \(appText) and that computer's agent (\(status.version)) needs \(status.minClientVersion.map { "\($0) or newer" } ?? "a newer app").",
+                              fix: "Install the newest Greenfield on this phone, then Check again.")
+        case .compatible: break
+        }
+        if let view = status.appCompatibility, !view.works {
+            return HealthItem(id: id, title: title, level: .warning, detail: "Reachable\(agent). The computer reports: \(view.message)",
+                              fix: view.fix ?? "Update whichever of the app and the agent is older.")
+        }
         if !status.accessibility {
             return HealthItem(id: id, title: title, level: .problem, detail: "Reachable\(agent), but it cannot type yet: Accessibility is not approved.",
                               fix: "On \(name): System Settings > Privacy & Security > Accessibility, switch on greenfield-inserter.")
@@ -195,7 +218,8 @@ enum HealthReport {
                               fix: line.fix ?? "On \(name) run `greenfield-inserter doctor`; it says what is missing.")
         }
         let delivery = status.delivery.map { " \($0.message)." } ?? ""
-        return HealthItem(id: id, title: title, level: .ok, detail: "Ready\(agent);\(delivery) \(status.insertedCount) texts inserted so far.", fix: nil)
+        return HealthItem(id: id, title: title, level: .ok,
+                          detail: "Compatible (app \(appText)). Ready\(agent);\(delivery) \(status.insertedCount) texts inserted so far.", fix: nil)
     }
 
     private static func outbox(_ input: HealthInputs) -> HealthItem {

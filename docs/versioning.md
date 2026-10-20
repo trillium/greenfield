@@ -6,7 +6,7 @@ Semantic versioning, driven by git tags. Nobody edits a version number by hand.
 
 | Bump | When |
 |---|---|
-| **MAJOR** | A breaking change to the Mac contract ([mac-contract.md](mac-contract.md)): an old receiver can no longer serve the new app, or the reverse. |
+| **MAJOR** | A breaking change to the Mac contract ([mac-contract.md](mac-contract.md)) from 1.0.0 on: an old agent can no longer serve the new app, or the reverse. While MAJOR is 0, such a breaking change bumps MINOR instead. |
 | **MINOR** | A new user-visible feature. |
 | **PATCH** | A fix, or any change users can't see. |
 

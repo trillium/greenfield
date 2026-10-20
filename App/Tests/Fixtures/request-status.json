@@ -1,0 +1,9 @@
+{
+  "_comment": "What the phone sends for GET /status (and /peers). Same rules as request-text.json.",
+  "method": "GET",
+  "path": "/status",
+  "headers": {
+    "X-Greenfield-App": "<semver of the app, from its git tag>",
+    "X-Dictation-Key": "<only when a key is saved under Advanced>"
+  }
+}

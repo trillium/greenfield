@@ -13,6 +13,10 @@ MARKETING_VERSION = 0.0.0
 CURRENT_PROJECT_VERSION = 1
 #include? "Version.xcconfig"
 
+// The oldest Mac agent version this app works with (part of the compatibility contract, docs/mac-contract.md). Raise it, never
+// the app's own version: that comes from the git tag.
+GREENFIELD_MIN_PEER_VERSION = 0.2.0
+
 // Computers the app starts with, "name=tailnet-address name=tailnet-address" (no keys). Set it in the gitignored Local.xcconfig.
 GREENFIELD_PRESET_COMPUTERS =
 
