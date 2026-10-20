@@ -3,9 +3,10 @@ import XCTest
 
 final class HealthTests: XCTestCase {
     func snap(listen: [String] = ["100.84.99.99:47821", "127.0.0.1:47821"], accessibility: Bool = true, locked: Bool = false,
-              secure: Bool = false, key: Bool = true, version: String = "0.1.0") -> DaemonSnapshot {
+              secure: Bool = false, key: Bool = true, identity: Bool = true, version: String = "0.1.0") -> DaemonSnapshot {
         DaemonSnapshot(name: "m", version: version, listen: listen, accessibility: accessibility, screenLocked: locked,
-                       secureInput: secure, keyConfigured: key, executable: nil, pid: 42)
+                       secureInput: secure, keyConfigured: key, executable: nil, pid: 42,
+                       auth: "tailnet", identityOK: identity, tailnetUser: "me@example")
     }
     let local = HealthSubject.local(port: 47821)
     let remote = HealthSubject.remote(alias: "book", host: "book.ts.net", port: 47821)
@@ -18,7 +19,7 @@ final class HealthTests: XCTestCase {
     func testAllGoodIsHealthy() {
         let cs = checks(.ok(snap()))
         XCTAssertTrue(isHealthy(cs))
-        XCTAssertEqual(cs.map(\.id), ["daemon", "listening", "key", "accessibility", "unlocked", "secure-input", "version"])
+        XCTAssertEqual(cs.map(\.id), ["daemon", "listening", "auth", "accessibility", "unlocked", "secure-input", "version"])
         XCTAssertTrue(formatHealth(label: "mini0", checks: cs).hasPrefix("mini0: HEALTHY"))
     }
 
@@ -26,11 +27,12 @@ final class HealthTests: XCTestCase {
         XCTAssertEqual(status(checks(.ok(snap(accessibility: false))), "accessibility"), .fail)
         XCTAssertEqual(status(checks(.ok(snap(locked: true))), "unlocked"), .fail)
         XCTAssertEqual(status(checks(.ok(snap(secure: true))), "secure-input"), .fail)
-        XCTAssertEqual(status(checks(.ok(snap(key: false))), "key"), .fail)
+        XCTAssertEqual(status(checks(.ok(snap(identity: false))), "auth"), .fail)
+        XCTAssertEqual(status(checks(.ok(snap(key: false))), "auth"), .pass)       // no key is healthy
         XCTAssertEqual(status(checks(.ok(snap(listen: ["127.0.0.1:47821"]))), "listening"), .fail)
         XCTAssertEqual(status(checks(.ok(snap(listen: ["100.84.99.99:47821"]))), "listening"), .fail)
         XCTAssertEqual(status(checks(.ok(snap(listen: ["0.0.0.0:47821", "127.0.0.1:47821", "100.84.99.99:47821"]))), "listening"), .fail)
-        for bad in [snap(accessibility: false), snap(locked: true), snap(secure: true), snap(key: false)] {
+        for bad in [snap(accessibility: false), snap(locked: true), snap(secure: true), snap(identity: false)] {
             XCTAssertFalse(isHealthy(checks(.ok(bad))))
         }
         XCTAssertEqual(status(checks(.ok(snap(accessibility: false))), "daemon"), .pass)
@@ -44,14 +46,15 @@ final class HealthTests: XCTestCase {
     }
 
     func testAuthProblemsOnRemote() {
-        XCTAssertEqual(status(checks(.unauthorized, remote), "key"), .fail)
-        XCTAssertTrue(checks(.unauthorized, remote).first { $0.id == "key" }!.fix.contains("macs add book"))
-        XCTAssertEqual(status(checks(.keyNotSet, remote), "key"), .fail)
+        XCTAssertEqual(status(checks(.unauthorized, remote), "auth"), .fail)
+        XCTAssertTrue(checks(.unauthorized, remote).first { $0.id == "auth" }!.fix.contains("same Tailscale user"))
+        XCTAssertEqual(status(checks(.identityUnavailable, remote), "auth"), .fail)
+        XCTAssertEqual(status(checks(.keyNotSet, remote), "auth"), .fail)           // an older daemon
         XCTAssertEqual(status(checks(.unauthorized, remote), "daemon"), .pass)
     }
 
     func testOlderDaemonIsExplained() {
-        let c = checks(.unexpected(404)).first { $0.id == "key" }!
+        let c = checks(.unexpected(404)).first { $0.id == "auth" }!
         XCTAssertTrue(c.detail.contains("older version"))
         XCTAssertTrue(c.fix.contains("make -C mac install"))
     }
@@ -63,9 +66,9 @@ final class HealthTests: XCTestCase {
 
     func testEveryFailureHasWhatWhyAndFix() {
         let outcomes: [(SnapshotOutcome, HealthSubject)] = [
-            (.ok(snap(accessibility: false, locked: true, secure: true, key: false, version: "9")), remote),
+            (.ok(snap(accessibility: false, locked: true, secure: true, identity: false, version: "9")), remote),
             (.ok(snap(listen: ["0.0.0.0:1"])), local), (.unreachable("x"), local), (.unreachable("x"), remote),
-            (.unauthorized, remote), (.keyNotSet, remote), (.unexpected(500), local), (.forbidden, local),
+            (.unauthorized, remote), (.identityUnavailable, remote), (.keyNotSet, remote), (.unexpected(500), local), (.forbidden, local),
         ]
         for (o, s) in outcomes {
             for c in snapshotChecks(o, subject: s, localVersion: "0.1.0") where c.status == .fail || c.status == .warn {
@@ -117,7 +120,7 @@ final class HealthTests: XCTestCase {
         XCTAssertEqual(failing { $0.plistText = nil }, ["plist"])
         XCTAssertEqual(failing { $0.launchdLoaded = false; $0.launchdPid = nil }, ["launchd"])
         XCTAssertEqual(failing { $0.launchdPid = nil }, ["launchd"])
-        XCTAssertEqual(failing { $0.keyFileExists = false }, ["keyfile"])
+        XCTAssertEqual(failing { $0.keyFileExists = false }, [])          // the key is optional now
         XCTAssertEqual(failing { $0.keyFormatValid = false }, ["keyfile"])
         XCTAssertEqual(failing { $0.keyFileMode = 0o644 }, ["keyfile"])
         XCTAssertEqual(failing { $0.dirMode = 0o755 }, ["keyfile"])
@@ -145,7 +148,7 @@ final class HealthTests: XCTestCase {
         let mac = KnownMac(alias: "book", host: "book.ts.net", key: secret)
         let reports = [MacReport(mac: mac, state: .unauthorized, name: nil, version: nil)]
         var all = peerChecks(reports, localVersion: "0.1.0")
-        for o: SnapshotOutcome in [.unauthorized, .keyNotSet, .unreachable("x"), .ok(snap(key: false))] {
+        for o: SnapshotOutcome in [.unauthorized, .identityUnavailable, .keyNotSet, .unreachable("x"), .ok(snap(identity: false))] {
             all += snapshotChecks(o, subject: .remote(alias: "book", host: "book.ts.net", port: 1), localVersion: "0.1.0")
         }
         all += hostChecks(facts { $0.keyFileExists = false }, daemonExecutable: nil)
@@ -160,7 +163,7 @@ final class HealthTests: XCTestCase {
         XCTAssertTrue(formatHealth(label: "m", checks: ok).contains(keyFileNote))
         XCTAssertTrue(formatDoctor(label: "m", checks: ok).contains(keyFileNote))
         // a refused key (remote 401) carries it in the explanation
-        let refused = checks(.unauthorized, remote).first { $0.id == "key" }!
+        let refused = checks(.unauthorized, remote).first { $0.id == "auth" }!
         XCTAssertTrue(refused.why.contains(keyFileNote))
         XCTAssertTrue(formatDoctor(label: "m", checks: checks(.unauthorized, remote)).contains("shown once"))
         // peer check on a Mac that rejects our key

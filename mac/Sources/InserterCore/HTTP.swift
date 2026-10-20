@@ -8,9 +8,12 @@ public struct HTTPRequest: Equatable {
     public var body: Data
     /// True when the TCP peer is on this Mac (set by the server, never taken from the request).
     public var fromLoopback: Bool
+    /// The TCP peer's IPv4 address (set by the server), used to ask Tailscale who is calling.
+    public var peerAddress: String?
 
     public init(method: String, path: String, headers: [String: String] = [:], body: Data = Data(),
-                fromLoopback: Bool = false) {
+                fromLoopback: Bool = false, peerAddress: String? = nil) {
+        self.peerAddress = peerAddress
         self.method = method
         self.path = path
         self.fromLoopback = fromLoopback

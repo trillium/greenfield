@@ -37,6 +37,11 @@ public struct DaemonSnapshot: Equatable {
     public var keyConfigured: Bool
     public var executable: String?
     public var pid: Int?
+    /// "tailnet" for daemons that authorize by tailnet identity; nil for older ones that need a key.
+    public var auth: String?
+    /// Whether the daemon can ask Tailscale who is calling (nil for older daemons).
+    public var identityOK: Bool?
+    public var tailnetUser: String?
 
     public static func parse(_ body: Data) -> DaemonSnapshot? {
         guard let o = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
@@ -47,7 +52,8 @@ public struct DaemonSnapshot: Equatable {
             secureInput: o["secure_input"] as? Bool ?? false,
             // /status only answers when the key matched, so a key must exist.
             keyConfigured: o["key_configured"] as? Bool ?? true,
-            executable: (o["executable"] as? String).flatMap { $0.isEmpty ? nil : $0 }, pid: o["pid"] as? Int)
+            executable: (o["executable"] as? String).flatMap { $0.isEmpty ? nil : $0 }, pid: o["pid"] as? Int,
+            auth: o["auth"] as? String, identityOK: o["identity_ok"] as? Bool, tailnetUser: o["tailnet_user"] as? String)
     }
 }
 
@@ -55,6 +61,7 @@ public enum SnapshotOutcome: Equatable {
     case ok(DaemonSnapshot)
     case unreachable(String)
     case unauthorized
+    case identityUnavailable
     case keyNotSet
     case forbidden
     case unexpected(Int)
@@ -93,7 +100,7 @@ public func snapshotChecks(_ outcome: SnapshotOutcome, subject: HealthSubject, l
             fix: remote
                 ? "Run `tailscale status` here to see if that Mac is online, then on that Mac: `\(bin) doctor` (over ssh if you can)."
                 : "If it is installed: `launchctl kickstart -k gui/$(id -u)/\(InserterDefaults.launchdLabel)`. If not: `make -C mac install` from the repo."))
-        return checks + ["listening", "key", "accessibility", "unlocked", "secure-input", "version"].map {
+        return checks + ["listening", "auth", "accessibility", "unlocked", "secure-input", "version"].map {
             HealthCheck($0, titleFor($0), .skip, detail: "not checked: daemon not reachable")
         }
     case .forbidden:
@@ -101,7 +108,7 @@ public func snapshotChecks(_ outcome: SnapshotOutcome, subject: HealthSubject, l
             why: "The health request did not arrive from this Mac's loopback address.",
             fix: "Run health on the Mac itself, or use `macs health` from another Mac."))
         return checks
-    case .unauthorized, .keyNotSet, .unexpected, .ok:
+    case .unauthorized, .identityUnavailable, .keyNotSet, .unexpected, .ok:
         var detail = "answering on \(address)"
         if case .ok(let s) = outcome, let pid = s.pid { detail += " (pid \(pid))" }
         checks.append(HealthCheck("daemon", remote ? "Daemon reachable" : "Daemon running", .pass, detail: detail))
@@ -110,24 +117,31 @@ public func snapshotChecks(_ outcome: SnapshotOutcome, subject: HealthSubject, l
     // 2.. everything else needs a parsed snapshot, or an auth problem
     switch outcome {
     case .unauthorized:
-        checks.append(HealthCheck("key", "Key accepted", .fail, detail: "that Mac rejected the saved key",
-            why: "Without the matching key every request is refused (HTTP 401), so nothing can be inserted. " + keyFileNote,
-            fix: "Re-enter it here: `greenfield-inserter macs add \(alias) <host>` (key from `macs show-key` on the Mac that holds it). If lost: on that Mac `\(bin) key create --force`, then `macs add` again, and update the phone."))
+        checks.append(HealthCheck("auth", "Allowed by tailnet identity", .fail, detail: "that Mac refused this device",
+            why: "Each Mac accepts only devices of its own tailnet user (or a key, if you set one), and answers HTTP 401 to the rest, so nothing can be inserted. " + keyFileNote,
+            fix: "Sign this device and that Mac into the same Tailscale user (`tailscale status` on both shows the user). To allow a device of another user instead, give it that Mac's optional key: `greenfield-inserter macs add \(alias) \(subjectHost(subject)) --key`."))
         return checks + ["listening", "accessibility", "unlocked", "secure-input", "version"].map {
-            HealthCheck($0, titleFor($0), .skip, detail: "not checked: key not accepted")
+            HealthCheck($0, titleFor($0), .skip, detail: "not checked: request refused")
+        }
+    case .identityUnavailable:
+        checks.append(HealthCheck("auth", "Tailnet identity check works", .fail, detail: "\(remote ? "that Mac" : "the daemon") cannot ask Tailscale who is calling (HTTP 503)",
+            why: "The daemon refuses every request it cannot attribute to a tailnet user (it fails closed), so nothing can be inserted.",
+            fix: "\(onThatMac): make sure Tailscale is running and signed in (`tailscale status`) and that the command-line tool exists at /Applications/Tailscale.app/Contents/MacOS/Tailscale or /opt/homebrew/bin/tailscale."))
+        return checks + ["listening", "accessibility", "unlocked", "secure-input", "version"].map {
+            HealthCheck($0, titleFor($0), .skip, detail: "not checked: identity check failing")
         }
     case .keyNotSet:
-        checks.append(HealthCheck("key", "Key set", .fail, detail: "no key configured on that Mac",
-            why: "The daemon refuses every request until a key exists.",
-            fix: "\(onThatMac): `\(bin) key create` (shows the key once), then `greenfield-inserter macs add \(alias) \(subjectHost(subject))` here and enter it in the phone."))
+        checks.append(HealthCheck("auth", "Allowed without a key", .fail, detail: "older daemon: it still demands a key and none is set",
+            why: "Daemons before the tailnet-identity change refuse every request until a key exists.",
+            fix: "Update it: copy the repo's mac/ folder to \(remote ? "that Mac" : "this Mac") and run `make -C mac install`."))
         return checks + ["listening", "accessibility", "unlocked", "secure-input", "version"].map {
             HealthCheck($0, titleFor($0), .skip, detail: "not checked: no key")
         }
     case .unexpected(let code):
         let older = !remote && code == 404
-        checks.append(HealthCheck("key", "Key set", .fail,
+        checks.append(HealthCheck("auth", "Daemon answers health requests", .fail,
             detail: older ? "daemon answered 404 on /health: it is an older version" : "unexpected HTTP \(code)",
-            why: older ? "The running daemon predates health checks, so its key, Accessibility and lock state cannot be read."
+            why: older ? "The running daemon predates health checks, so its Accessibility and lock state cannot be read."
                        : "Something other than greenfield-inserter may be answering on that port, or the daemon is a different version.",
             fix: older ? "Update it: `make -C mac install` from the repo (then re-approve Accessibility if macOS asks)."
                        : "\(onThatMac): `\(bin) doctor`."))
@@ -147,7 +161,7 @@ private func subjectHost(_ s: HealthSubject) -> String {
 private func titleFor(_ id: String) -> String {
     switch id {
     case "listening": return "Listening on tailnet and loopback only"
-    case "key": return "Key set"
+    case "auth": return "Authorization by tailnet identity"
     case "accessibility": return "Accessibility granted"
     case "unlocked": return "Screen not locked"
     case "secure-input": return "No secure input"
@@ -175,11 +189,19 @@ private func okChecks(_ s: DaemonSnapshot, subject: HealthSubject, remote: Bool,
             why: hasTailnet ? "Local tools cannot reach the daemon." : "The phone and other Macs cannot reach the daemon over the tailnet.",
             fix: "\(onThatMac): make sure Tailscale is connected (`tailscale status`); the daemon rebinds by itself within about 10 seconds. If it does not: `launchctl kickstart -k gui/$(id -u)/\(InserterDefaults.launchdLabel)`."))
     }
-    out.append(s.keyConfigured
-        ? HealthCheck("key", titleFor("key"), .pass, detail: remote ? "key accepted" : "key file present")
-        : HealthCheck("key", titleFor("key"), .fail, detail: "no key configured",
-            why: "The daemon refuses every request until a key exists.",
-            fix: "`\(bin) key create` (shows the key once; enter it in the phone, then `greenfield-inserter macs add <alias> <host>` on the Mac you check from)."))
+    if s.auth == nil {
+        out.append(HealthCheck("auth", titleFor("auth"), .fail, detail: "older daemon: authorizes by key only",
+            why: "Every device must type a key; the tailnet-identity authorization is not in this version.",
+            fix: "Update it: copy the repo's mac/ folder to \(remote ? "that Mac" : "this Mac") and run `make -C mac install`."))
+    } else if s.identityOK == false {
+        out.append(HealthCheck("auth", titleFor("auth"), .fail, detail: "cannot ask Tailscale who is calling",
+            why: "The daemon refuses every request it cannot attribute to a tailnet user (it fails closed), so the phone's text would be rejected (HTTP 503).",
+            fix: "\(onThatMac): make sure Tailscale is running and signed in (`tailscale status`), and that the command-line tool exists at /Applications/Tailscale.app/Contents/MacOS/Tailscale or /opt/homebrew/bin/tailscale."))
+    } else {
+        let user = s.tailnetUser.map { "same tailnet user as this Mac (\($0))" } ?? "same tailnet user as this Mac"
+        out.append(HealthCheck("auth", titleFor("auth"), .pass,
+            detail: user + "; key " + (s.keyConfigured ? "set (optional extra)" : "not set (not needed)")))
+    }
     out.append(s.accessibility
         ? HealthCheck("accessibility", titleFor("accessibility"), .pass, detail: "granted")
         : HealthCheck("accessibility", titleFor("accessibility"), .fail, detail: "not granted to the running daemon",
@@ -267,23 +289,22 @@ public func hostChecks(_ f: HostFacts, daemonExecutable: String?) -> [HealthChec
 
     // key file
     if !f.keyFileExists {
-        out.append(HealthCheck("keyfile", "Key file present and private", .fail, detail: "\(f.keyFile) not found",
-            why: "No key means every request is refused.",
-            fix: "`\(f.installedBinary) key create` (shows the key once)."))
+        out.append(HealthCheck("keyfile", "Optional key file", .pass,
+            detail: "no key set; not needed (devices of this Mac's tailnet user are authorized by identity). `\(f.installedBinary) key create` adds one for other devices"))
     } else if !f.keyFormatValid {
-        out.append(HealthCheck("keyfile", "Key file present and private", .fail, detail: "\(f.keyFile) is not a valid key file",
+        out.append(HealthCheck("keyfile", "Optional key file private and valid", .fail, detail: "\(f.keyFile) is not a valid key file",
             why: "The daemon treats a corrupt key file as no key.",
             fix: "`\(f.installedBinary) key create --force` and re-enter the new key in the phone."))
     } else if let mode = f.keyFileMode, mode & 0o077 != 0 {
-        out.append(HealthCheck("keyfile", "Key file present and private", .fail, detail: "mode is \(String(mode, radix: 8)), should be 600",
+        out.append(HealthCheck("keyfile", "Optional key file private and valid", .fail, detail: "mode is \(String(mode, radix: 8)), should be 600",
             why: "Other users on this Mac could read it (it holds only a hash, but it should stay private).",
             fix: "`chmod 600 \(f.keyFile)`."))
     } else if let mode = f.dirMode, mode & 0o077 != 0 {
-        out.append(HealthCheck("keyfile", "Key file present and private", .fail, detail: "\(f.configDir) mode is \(String(mode, radix: 8)), should be 700",
+        out.append(HealthCheck("keyfile", "Optional key file private and valid", .fail, detail: "\(f.configDir) mode is \(String(mode, radix: 8)), should be 700",
             why: "Other users on this Mac could list or replace files there.",
             fix: "`chmod 700 \(f.configDir)`."))
     } else {
-        out.append(HealthCheck("keyfile", "Key file present and private", .pass, detail: "mode 600 in a 700 directory (holds a hash, not the key)"))
+        out.append(HealthCheck("keyfile", "Optional key file private and valid", .pass, detail: "mode 600 in a 700 directory (holds a hash, not the key)"))
     }
 
     if let exe = daemonExecutable, !exe.isEmpty, f.binaryExecutable, exe != f.installedBinary {
@@ -321,7 +342,7 @@ public func formatHealth(label: String, checks: [HealthCheck]) -> String {
     for c in checks {
         lines.append("  \(mark(c.status))  \(c.title)" + (c.detail.isEmpty ? "" : " - \(c.detail)"))
     }
-    if checks.contains(where: { $0.id == "key" || $0.id == "keyfile" }) { lines.append("  note: " + keyFileNote) }
+    if checks.contains(where: { $0.id == "auth" || $0.id == "keyfile" }) { lines.append("  note: " + keyFileNote) }
     return lines.joined(separator: "\n")
 }
 
@@ -337,6 +358,6 @@ public func formatDoctor(label: String, checks: [HealthCheck]) -> String {
         lines.append("        why:   \(c.why)")
         lines.append("        fix:   \(c.fix)")
     }
-    if checks.contains(where: { $0.id == "key" || $0.id == "keyfile" }) { lines += ["", "  note: " + keyFileNote] }
+    if checks.contains(where: { $0.id == "auth" || $0.id == "keyfile" }) { lines += ["", "  note: " + keyFileNote] }
     return lines.joined(separator: "\n")
 }

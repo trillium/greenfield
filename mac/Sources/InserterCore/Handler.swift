@@ -42,7 +42,7 @@ public final class RequestHandler {
     private let dedupe: DedupeCache
     private let name: () -> String
     private let listening: () -> [String]
-    private let localToken: String?
+    private let identity: TailnetIdentity?
     private let logger: RequestLogger?
     private let started: Date
     private let now: () -> Date
@@ -51,14 +51,14 @@ public final class RequestHandler {
 
     public init(keys: KeyVerifier, probe: SystemProbe, inserter: TextInserter, dedupe: DedupeCache = DedupeCache(),
                 name: @escaping () -> String, listening: @escaping () -> [String] = { [] },
-                localToken: String? = nil, logger: RequestLogger? = nil, now: @escaping () -> Date = Date.init) {
+                identity: TailnetIdentity? = nil, logger: RequestLogger? = nil, now: @escaping () -> Date = Date.init) {
         self.keys = keys
         self.probe = probe
         self.inserter = inserter
         self.dedupe = dedupe
         self.name = name
         self.listening = listening
-        self.localToken = localToken
+        self.identity = identity
         self.logger = logger
         self.now = now
         self.started = now()
@@ -76,20 +76,8 @@ public final class RequestHandler {
         guard let wanted = known[request.path] else {
             return .error(404, "not_found", "unknown path")
         }
-        // Authenticate before revealing anything else, including whether the method is right.
-        let presented = request.headers["x-dictation-key"]
-        var check = keys.verify(presented)
-        // The daemon's own throwaway token counts as the key, but only over loopback and only once a key exists.
-        if check == .mismatch, request.fromLoopback, let token = localToken, let presented = presented,
-           constantTimeEqual(Array(presented.utf8), Array(token.utf8)) {
-            check = .ok
-        }
-        switch check {
-        case .ok: break
-        case .mismatch: return .error(401, "unauthorized", "missing or wrong X-Dictation-Key (the key file holds only a hash; use the key shown once by `key create`)")
-        case .notConfigured:
-            return .error(503, "key_not_configured", "no key set on this Mac; run `greenfield-inserter key create`")
-        }
+        // Authorize before revealing anything else, including whether the method is right.
+        if let denied = authorize(request) { return denied }
         guard request.method == wanted else {
             var r = HTTPResponse.error(405, "method_not_allowed", "use \(wanted)")
             r.headers["Allow"] = wanted
@@ -98,13 +86,37 @@ public final class RequestHandler {
         return request.path == "/status" ? status() : postText(request)
     }
 
+    /// Who may use the daemon: this Mac itself, any device of the same tailnet user as this Mac's own node
+    /// (asked of the local Tailscale), or anyone presenting the optional key. If Tailscale cannot say who is
+    /// calling and there is no valid key, the request is refused.
+    private func authorize(_ request: HTTPRequest) -> HTTPResponse? {
+        if request.fromLoopback { return nil }
+        var refusal: HTTPResponse
+        if let peer = request.peerAddress, let identity = identity {
+            switch identity.identify(peer) {
+            case .sameUser: return nil
+            case .otherUser(let login):
+                refusal = .error(401, "unauthorized", "this device belongs to a different tailnet user (\(login)) than this Mac")
+            case .unknown(let why):
+                refusal = .error(503, "identity_unavailable", "could not verify who is calling (\(why)); refusing the request")
+            }
+        } else {
+            refusal = .error(503, "identity_unavailable", "could not verify who is calling; refusing the request")
+        }
+        // The optional key is a second way in, for devices of other users.
+        if let presented = request.headers["x-dictation-key"], !presented.isEmpty {
+            if keys.verify(presented) == .ok { return nil }
+            return .error(401, "unauthorized", "the key was wrong (the key file holds only a hash; use the key shown once by `key create`)")
+        }
+        return refusal
+    }
+
     /// Same facts as /status plus what only the daemon itself can know, for `health` and `doctor`
     /// run on this Mac. No key needed because it answers loopback peers only and holds nothing secret.
     private func health(_ request: HTTPRequest) -> HTTPResponse {
         guard request.fromLoopback else { return .error(403, "local_only", "/health is only for requests from this Mac") }
         guard request.method == "GET" else { return .error(405, "method_not_allowed", "use GET") }
         var body = statusFields()
-        body["key_configured"] = keys.verify(nil) != .notConfigured
         body["pid"] = Int(ProcessInfo.processInfo.processIdentifier)
         body["executable"] = Bundle.main.executablePath ?? ""
         return .json(200, body)
@@ -127,6 +139,10 @@ public final class RequestHandler {
             "accessibility": probe.accessibilityTrusted,
             "inserted_count": count,
             "listen": listening(),
+            "auth": "tailnet",
+            "key_configured": keys.verify(nil) != .notConfigured,
+            "tailnet_user": identity?.selfLogin() ?? NSNull(),
+            "identity_ok": identity?.selfLogin() != nil,
         ]
     }
 

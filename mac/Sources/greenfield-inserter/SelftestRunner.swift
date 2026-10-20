@@ -74,17 +74,14 @@ final class SelftestWindow: NSObject, NSTextFieldDelegate {
 }
 
 /// Runs the real delivery path against the local daemon and reports what the window saw.
-func runSelftest(port: Int, keyFromStdin: String?, simulate: Bool, paths: InserterPaths) -> SelftestObservations {
+func runSelftest(port: Int, simulate: Bool) -> SelftestObservations {
     var o = SelftestObservations()
     o.simulated = simulate
 
-    var credential: String?
     if !simulate {
         let health = InserterClient.snapshot(host: "127.0.0.1", port: port, key: nil, path: "/health")
         o.preflight = snapshotChecks(health, subject: .local(port: port), localVersion: RequestHandler.version)
         if o.preflight.contains(where: { $0.status == .fail }) { return o }
-        credential = keyFromStdin ?? LocalToken.read(paths: paths)
-        if credential == nil { o.credentialProblem = "this Mac's daemon has not written a local token (it is an older version)"; return o }
     }
 
     let ui = SelftestWindow()
@@ -93,7 +90,7 @@ func runSelftest(port: Int, keyFromStdin: String?, simulate: Bool, paths: Insert
     o.windowFocused = focused
     guard focused else { return o }
 
-    let mac = KnownMac(alias: "local", host: "127.0.0.1", port: port, key: credential ?? "")
+    let mac = KnownMac(alias: "local", host: "127.0.0.1", port: port, key: "")
     let marker = "greenfield-selftest-" + String(UUID().uuidString.prefix(8)).lowercased()
 
     func deliver(_ text: String, method: String?) -> InserterClient.SendResult? {

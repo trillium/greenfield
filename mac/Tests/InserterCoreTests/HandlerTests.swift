@@ -109,58 +109,107 @@ final class HandlerTests: XCTestCase {
         XCTAssertFalse(String(data: r.body, encoding: .utf8)!.contains("good"))
     }
 
-    // MARK: local token
+    // MARK: tailnet identity
 
-    func localHandler() -> RequestHandler {
-        RequestHandler(keys: keys, probe: probe, inserter: inserter, name: { "Test Mac" }, localToken: "tok-local", logger: logger)
+    final class StubIdentity: TailnetIdentity {
+        var result: PeerIdentity = .sameUser(login: "me@example")
+        var own: String? = "me@example"
+        var asked: [String] = []
+        func identify(_ address: String) -> PeerIdentity { asked.append(address); return result }
+        func selfLogin() -> String? { own }
     }
 
-    func testLocalTokenWorksOnlyOverLoopback() {
-        let h = localHandler()
-        func call(_ token: String, loopback: Bool) -> Int {
-            h.handle(HTTPRequest(method: "GET", path: "/status", headers: ["x-dictation-key": token], fromLoopback: loopback)).status
-        }
-        XCTAssertEqual(call("tok-local", loopback: true), 200)
-        XCTAssertEqual(call("tok-local", loopback: false), 401)     // arrived over the network
-        XCTAssertEqual(call("tok-other", loopback: true), 401)
-        XCTAssertEqual(call("good", loopback: false), 200)          // the real key still works
+    func identityHandler(_ identity: StubIdentity) -> RequestHandler {
+        RequestHandler(keys: keys, probe: probe, inserter: inserter, name: { "Test Mac" }, identity: identity, logger: logger)
     }
 
-    func testLocalTokenCannotBypassAMissingKey() {
-        keys.result = .notConfigured
-        let r = localHandler().handle(HTTPRequest(method: "GET", path: "/status", headers: ["x-dictation-key": "tok-local"], fromLoopback: true))
+    func call(_ h: RequestHandler, key: String? = nil, loopback: Bool = false, peer: String? = "100.64.0.9", path: String = "/status") -> HTTPResponse {
+        var headers: [String: String] = [:]
+        if let key = key { headers["x-dictation-key"] = key }
+        return h.handle(HTTPRequest(method: path == "/text" ? "POST" : "GET", path: path, headers: headers,
+                                    body: Data(#"{"id":"i1","text":"x"}"#.utf8), fromLoopback: loopback, peerAddress: peer))
+    }
+
+    func testSameUserNeedsNoKey() {
+        let id = StubIdentity()
+        keys.result = .notConfigured                       // no key at all is fine
+        XCTAssertEqual(call(identityHandler(id)).status, 200)
+        XCTAssertEqual(id.asked, ["100.64.0.9"])
+        XCTAssertEqual(call(identityHandler(id), path: "/text").status, 200)
+    }
+
+    func testOtherTailnetUserIsRefused() {
+        let id = StubIdentity(); id.result = .otherUser(login: "stranger@example")
+        let r = call(identityHandler(id), path: "/text")
+        XCTAssertEqual(r.status, 401)
+        XCTAssertTrue(inserter.inserted.isEmpty)
+        XCTAssertTrue(object(r)["message"] as? String == "this device belongs to a different tailnet user (stranger@example) than this Mac")
+    }
+
+    func testFailsClosedWhenTailscaleCannotAnswer() {
+        let id = StubIdentity(); id.result = .unknown("tailscale is not running")
+        let r = call(identityHandler(id), path: "/text")
         XCTAssertEqual(r.status, 503)
+        XCTAssertEqual(object(r)["error"] as? String, "identity_unavailable")
+        XCTAssertTrue(inserter.inserted.isEmpty)
+        // no identity provider at all, or no peer address, is also a refusal
+        XCTAssertEqual(call(handler).status, 503)
+        XCTAssertEqual(call(identityHandler(StubIdentity()), peer: nil).status, 503)
     }
 
-    func testLocalTokenFile() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("tok-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let paths = InserterPaths(directory: dir)
-        XCTAssertNil(LocalToken.read(paths: paths))
-        let t = try LocalToken.create(paths: paths)
-        XCTAssertEqual(LocalToken.read(paths: paths), t)
-        let mode = (try FileManager.default.attributesOfItem(atPath: paths.localTokenFile.path)[.posixPermissions] as? NSNumber)?.intValue
-        XCTAssertEqual(mode, 0o600)
-        XCTAssertNotEqual(try LocalToken.create(paths: paths), t)    // new one each start
+    func testLoopbackIsAlwaysAllowedWithoutAskingTailscale() {
+        let id = StubIdentity(); id.result = .unknown("down")
+        let r = call(identityHandler(id), loopback: true, peer: "127.0.0.1")
+        XCTAssertEqual(r.status, 200)
+        XCTAssertTrue(id.asked.isEmpty)
+    }
+
+    func testOptionalKeyLetsInOtherUsers() {
+        let id = StubIdentity(); id.result = .otherUser(login: "friend@example")
+        XCTAssertEqual(call(identityHandler(id), key: "good").status, 200)
+        XCTAssertEqual(call(identityHandler(id), key: "wrong").status, 401)
+        XCTAssertTrue((object(call(identityHandler(id), key: "wrong"))["message"] as? String ?? "").contains("only a hash"))
+        // and the key also works when Tailscale is down
+        id.result = .unknown("down")
+        XCTAssertEqual(call(identityHandler(id), key: "good").status, 200)
+    }
+
+    func testSameUserWithAWrongKeyIsStillAllowed() {
+        XCTAssertEqual(call(identityHandler(StubIdentity()), key: "wrong").status, 200)
+    }
+
+    func testStatusReportsTailnetAuthMode() {
+        let id = StubIdentity()
+        let o = object(call(identityHandler(id)))
+        XCTAssertEqual(o["auth"] as? String, "tailnet")
+        XCTAssertEqual(o["tailnet_user"] as? String, "me@example")
+        XCTAssertEqual(o["identity_ok"] as? Bool, true)
+        XCTAssertEqual(o["key_configured"] as? Bool, true)
+        keys.result = .notConfigured
+        XCTAssertEqual(object(call(identityHandler(id)))["key_configured"] as? Bool, false)
+        id.own = nil
+        XCTAssertEqual(object(call(identityHandler(id)))["identity_ok"] as? Bool, false)
     }
 
     // MARK: auth
 
-    func testMissingAndWrongKeyAre401() {
-        XCTAssertEqual(post(#"{"id":"a","text":"hi"}"#, key: nil).status, 401)
-        XCTAssertEqual(post(#"{"id":"a","text":"hi"}"#, key: "bad").status, 401)
-        XCTAssertEqual(handler.handle(HTTPRequest(method: "GET", path: "/status")).status, 401)
+    func testRefusedDevicesGet401WithOrWithoutAKey() {
+        let id = StubIdentity(); id.result = .otherUser(login: "x@example")
+        let h = identityHandler(id)
+        XCTAssertEqual(call(h, path: "/text").status, 401)
+        XCTAssertEqual(call(h, key: "bad", path: "/text").status, 401)
+        XCTAssertEqual(call(h).status, 401)
         XCTAssertTrue(inserter.inserted.isEmpty)
     }
 
-    func testUnconfiguredKeyIs503() {
+    func testNoKeyConfiguredIsNotAnError() {
         keys.result = .notConfigured
-        XCTAssertEqual(post(#"{"id":"a","text":"hi"}"#).status, 503)
-        XCTAssertEqual(object(post(#"{"id":"a","text":"hi"}"#))["error"] as? String, "key_not_configured")
+        XCTAssertEqual(call(identityHandler(StubIdentity()), path: "/text").status, 200)
     }
 
     func testAuthIsCheckedBeforeMethodAndBody() {
-        let r = handler.handle(HTTPRequest(method: "DELETE", path: "/text"))
+        let id = StubIdentity(); id.result = .otherUser(login: "x@example")
+        let r = identityHandler(id).handle(HTTPRequest(method: "DELETE", path: "/text", peerAddress: "100.64.0.9"))
         XCTAssertEqual(r.status, 401)
     }
 

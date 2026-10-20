@@ -7,11 +7,11 @@ greenfield-inserter \(RequestHandler.version) - receives text over the tailnet a
 usage:
   greenfield-inserter serve [--port N] [--bind IP] [--name NAME] [--log-stderr]
   greenfield-inserter key create [--force] [--out-file PATH]
-                                              make the key and show it once (or write it to a 0600 file instead)
-  greenfield-inserter key status              say whether a key is set (never shows it)
+                                              OPTIONAL: make a key for devices of other tailnet users; shown once
+  greenfield-inserter key status              say whether the optional key is set (never shows it)
   greenfield-inserter name [set NAME | reset] show or change the name the phone displays
-  greenfield-inserter macs add ALIAS HOST [--port N] [--key-stdin]
-                                              remember a Mac and its key (asked for without echo, or read from stdin)
+  greenfield-inserter macs add ALIAS HOST [--port N] [--key | --key-stdin] [--ssh USER@HOST]
+                                              remember a Mac; no key is needed for your own tailnet user's devices
   greenfield-inserter macs list | remove ALIAS | show-key ALIAS
   greenfield-inserter macs check              GET /status on every remembered Mac: name, version, locked / secure input
   greenfield-inserter macs test [ALIAS] [--text STR]
@@ -19,7 +19,7 @@ usage:
   greenfield-inserter health [--port N]       fast yes/no for this Mac's daemon; exit 0 only if everything is good
   greenfield-inserter doctor [--port N]       slower; for each failed check says what is wrong, why it matters and the fix
   greenfield-inserter macs health | doctor    the same for every remembered Mac, seen from here
-  greenfield-inserter selftest [--port N] [--key-stdin]
+  greenfield-inserter selftest [--port N]
                                               open a test window, send a test string and a Return through this Mac's
                                               own daemon, read them back; prints PASS or FAIL with the fix
   greenfield-inserter macs selftest ALIAS     run that on another Mac over ssh (see `macs ssh`)
@@ -53,13 +53,12 @@ case "serve":
     let nameOverride = option("--name", in: args)
     try? paths.ensureDirectory()
     let logger = FileLogger(file: paths.logFile, echoToStderr: args.contains("--log-stderr"))
-    let localToken = try? LocalToken.create(paths: paths)
     var server: HTTPServer!
     let handler = RequestHandler(keys: keys, probe: MacSystemProbe(), inserter: MacInserter(),
                                  name: { nameOverride ?? macName.current() }, listening: { server.listening() },
-                                 localToken: localToken, logger: logger)
+                                 identity: TailscaleIdentity(), logger: logger)
     logger.log("starting \(RequestHandler.serviceName) \(RequestHandler.version) name=\(nameOverride ?? macName.current())")
-    if !keys.isConfigured { logger.log("no key configured; run `greenfield-inserter key create`") }
+    logger.log("authorization: loopback, same tailnet user\(keys.isConfigured ? ", or the optional key" : "") (no key needed)")
     if !MacSystemProbe().accessibilityTrusted { logger.log("Accessibility not granted; run `greenfield-inserter permissions`") }
     server = HTTPServer(target: target, port: port, handler: handler, logger: logger)
     server.run()
@@ -80,7 +79,7 @@ case "key":
                 exit(0)
             }
             print("""
-            Key for \(macName.current()) (shown once - enter it in the phone app now):
+            Optional key for \(macName.current()) (shown once; only needed by devices of other tailnet users):
 
                 \(key)
 
@@ -88,7 +87,7 @@ case "key":
             """)
         } catch { fail("key create failed: \(error)") }
     case "status":
-        print(keys.isConfigured ? "key configured (\(paths.keyFile.path))" : "no key configured")
+        print(keys.isConfigured ? "optional key set (\(paths.keyFile.path))" : "no key set (not needed: devices of this Mac's tailnet user are authorized by identity)")
     default: fail(usage, code: 2)
     }
 
@@ -128,8 +127,7 @@ case "selftest":
     let port = Int(option("--port", in: args) ?? String(InserterDefaults.port)) ?? 0
     guard port > 0, port < 65536 else { fail("bad --port", code: 2) }
     let simulate = args.contains("--simulate-delivery")   // development only: proves the window, not delivery
-    let stdinKey = args.contains("--key-stdin") ? readLine(strippingNewline: true)?.trimmingCharacters(in: .whitespacesAndNewlines) : nil
-    let observations = runSelftest(port: port, keyFromStdin: stdinKey, simulate: simulate, paths: paths)
+    let observations = runSelftest(port: port, simulate: simulate)
     let checks = evaluateSelftest(observations)
     print(formatSelftest(label: macName.current(), checks: checks, simulated: simulate))
     exit(selftestPassed(checks) && !simulate ? 0 : 1)
@@ -147,19 +145,21 @@ case "macs":
     }
     switch args.dropFirst().first {
     case "add":
-        guard args.count >= 4 else { fail("usage: macs add ALIAS HOST [--port N] [--key-stdin]", code: 2) }
+        guard args.count >= 4 else { fail("usage: macs add ALIAS HOST [--port N] [--key | --key-stdin] [--ssh USER@HOST]", code: 2) }
         let port = Int(option("--port", in: args) ?? "47821") ?? 0
         guard port > 0, port < 65536 else { fail("bad --port", code: 2) }
-        var key: String
+        var key = ""
         if args.contains("--key-stdin") {
             key = readLine(strippingNewline: true) ?? ""
-        } else {
+        } else if args.contains("--key") {
             guard isatty(0) == 1, let p = getpass("Key for \(args[2]) (hidden): ") else { fail("no terminal; pass --key-stdin") }
             key = String(cString: p)
         }
         key = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else { fail("empty key") }
-        do { try registry.upsert(KnownMac(alias: args[2], host: args[3], port: port, key: key)); print("saved \(args[2])") }
+        if (args.contains("--key") || args.contains("--key-stdin")) && key.isEmpty { fail("empty key") }
+        let existing = all.first { $0.alias == args[2] }
+        let ssh = option("--ssh", in: args) ?? existing?.ssh
+        do { try registry.upsert(KnownMac(alias: args[2], host: args[3], port: port, key: key, ssh: ssh)); print("saved \(args[2])") }
         catch { fail("\(error)") }
     case "remove":
         guard args.count >= 3 else { fail("usage: macs remove ALIAS", code: 2) }
@@ -167,7 +167,9 @@ case "macs":
     case "list":
         for m in all { print("\(m.alias)  \(m.host):\(m.port)") }
     case "show-key":
-        print(find(args.count >= 3 ? args[2] : nil).key)
+        let saved = find(args.count >= 3 ? args[2] : nil)
+        if saved.key.isEmpty { fail("no key saved for \(saved.alias) (none is needed for devices of the same tailnet user)") }
+        print(saved.key)
     case "health", "doctor":
         guard !all.isEmpty else { fail("no Macs yet; add one with `macs add ALIAS HOST`") }
         var results = [(String, [HealthCheck])?](repeating: nil, count: all.count)

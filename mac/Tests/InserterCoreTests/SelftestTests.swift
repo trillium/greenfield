@@ -20,7 +20,7 @@ final class SelftestTests: XCTestCase {
     func testPass() {
         let cs = evaluateSelftest(good())
         XCTAssertTrue(selftestPassed(cs))
-        XCTAssertEqual(cs.map(\.id), ["preflight", "credential", "window", "text-send", "text-arrival", "return-send", "return-seen"])
+        XCTAssertEqual(cs.map(\.id), ["preflight", "window", "text-send", "text-arrival", "return-send", "return-seen"])
         XCTAssertTrue(formatSelftest(label: "m", checks: cs, simulated: false).hasPrefix("selftest on m: PASS"))
     }
 
@@ -34,10 +34,8 @@ final class SelftestTests: XCTestCase {
         XCTAssertFalse(selftestPassed(cs))
     }
 
-    func testCredentialAndWindowFailures() {
-        var o = good(); o.credentialProblem = "no local token"
-        XCTAssertEqual(failing(o)?.id, "credential")
-        o = good(); o.windowFocused = false
+    func testWindowFailure() {
+        var o = good(); o.windowFocused = false
         XCTAssertEqual(failing(o)?.id, "window")
     }
 
@@ -47,8 +45,7 @@ final class SelftestTests: XCTestCase {
         }
         XCTAssertTrue(fail(409)!.detail.contains("409")); XCTAssertTrue(fail(423)!.detail.contains("locked"))
         XCTAssertTrue(fail(503, "Accessibility is not approved")!.detail.contains("Accessibility"))
-        XCTAssertTrue(fail(401)!.fix.contains("--key-stdin"))
-        XCTAssertTrue(fail(401)!.why.contains(keyFileNote))
+        XCTAssertTrue(fail(401)!.fix.contains("doctor"))
         XCTAssertNotNil(fail(nil, "unreachable (x)"))
         XCTAssertEqual(fail(409)?.id, "text-send")
     }
