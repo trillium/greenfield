@@ -8,6 +8,7 @@ struct DictationApp: App {
         WindowGroup {
             ContentView(model: model)
                 .task { await SelfTest.runIfRequested(model) }
+                .onOpenURL { _ = model.peers.handle(link: $0) }
         }
     }
 }

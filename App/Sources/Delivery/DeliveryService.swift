@@ -52,6 +52,12 @@ final class DeliveryService {
         }
     }
 
+    /// The computers this one can see on its tailnet that run the agent; nil if it does not answer `/peers`.
+    func peers(of target: MacTarget) async -> [DiscoveredComputer]? {
+        guard let base = target.baseURL else { return nil }
+        return await client.peers(of: base, key: targets.key(for: target))
+    }
+
     /// `GET /status` for the Mac, with its saved key unless `key` is given (testing an edit before it is saved).
     func health(of target: MacTarget, key: String? = nil) async -> ReceiverClient.Health {
         guard let base = target.baseURL else { return .unreachable("The address is not valid.") }

@@ -254,3 +254,66 @@ final class PresetComputersTests: XCTestCase {
         XCTAssertNil(StubURLProtocol.requests.first?.value(forHTTPHeaderField: "X-Dictation-Key"))
     }
 }
+
+@MainActor
+final class PeerDirectoryTests: XCTestCase {
+    private func directory() -> (PeerDirectory, TargetStore) {
+        let store = TargetStore(defaults: isolatedDefaults(), keys: MemoryKeyStore())
+        let client = ReceiverClient(session: StubURLProtocol.session(), tailnetConnected: { true })
+        return (PeerDirectory(service: DeliveryService(outbox: Outbox(url: nil), targets: store, client: client)), store)
+    }
+
+    func testPeersAnswerIsParsedLeniently() {
+        let first: [String: String] = ["name": "macbook", "address": "macbook.example.ts.net.", "version": "0.2.0", "auth": "tailnet"]
+        let data = json(["ok": true, "peers": [first, ["name": "no-address"], ["address": "bare.example.ts.net"]]])
+        let found = PeerDirectory.parsePeers(data)
+        XCTAssertEqual(found.map(\.address), ["macbook.example.ts.net", "bare.example.ts.net"])
+        XCTAssertEqual(found.first?.version, "0.2.0")
+        XCTAssertEqual(found.last?.name, "bare.example.ts.net")
+        XCTAssertTrue(PeerDirectory.parsePeers(Data("nope".utf8)).isEmpty)
+    }
+
+    func testOneSeedLeadsToEveryCompatibleComputer() async throws {
+        let (directory, store) = directory()
+        try store.save(MacTarget(name: "mini0", address: "mini0.example.ts.net"), key: nil)
+        StubURLProtocol.install { request in
+            XCTAssertEqual(request.url?.path, "/peers")
+            return (200, json(["ok": true, "peers": [["name": "mini0", "address": "mini0.example.ts.net"],
+                                                     ["name": "macbook", "address": "macbook.example.ts.net"],
+                                                     ["name": "studio", "address": "studio.example.ts.net"]]]))
+        }
+        await directory.refresh()
+        XCTAssertEqual(directory.discovered.map(\.name), ["macbook", "studio"], "the seed itself is not offered again")
+        directory.add(directory.discovered[0])
+        XCTAssertEqual(store.targets.map(\.name), ["mini0", "macbook"])
+        XCTAssertNil(store.key(for: store.targets[1]), "no key")
+        XCTAssertEqual(directory.discovered.map(\.name), ["studio"])
+    }
+
+    func testAnAgentWithoutPeersJustOffersNothing() async throws {
+        let (directory, store) = directory()
+        try store.save(MacTarget(name: "mini0", address: "mini0.example.ts.net"), key: nil)
+        StubURLProtocol.install { _ in (404, json(["ok": false])) }
+        await directory.refresh()
+        XCTAssertTrue(directory.discovered.isEmpty)
+    }
+
+    func testBonjourResultsAreOfferedAndNotDuplicated() {
+        let (directory, store) = directory()
+        directory.bonjourFound(["Studio Mac", "studio mac", "Laptop"])
+        XCTAssertEqual(directory.discovered.map(\.address), ["studio-mac.local", "laptop.local"])
+        try? store.save(MacTarget(name: "Laptop", address: "laptop.local"), key: nil)
+        directory.bonjourFound(["Studio Mac", "Laptop"])
+        XCTAssertEqual(directory.discovered.map(\.address), ["studio-mac.local"])
+    }
+
+    func testALinkAddsAComputerWithoutAKey() {
+        let (directory, store) = directory()
+        let added = directory.handle(link: URL(string: "greenfield://add?name=Desk&address=desk.example.ts.net")!)
+        XCTAssertEqual(added?.name, "Desk")
+        XCTAssertEqual(store.targets.map(\.address), ["desk.example.ts.net"])
+        XCTAssertNil(directory.handle(link: URL(string: "greenfield://add?name=x")!))
+        XCTAssertNil(directory.handle(link: URL(string: "https://example.com/add?address=a")!))
+        XCTAssertNil(directory.handle(link: URL(string: "greenfield://add?address=bad%20name")!))
+    }
+}

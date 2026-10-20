@@ -104,6 +104,15 @@ struct ReceiverClient: Sendable {
         }
     }
 
+    /// `GET /peers`: the compatible computers the agent can see on its tailnet; nil when it does not offer the route.
+    func peers(of base: URL, key: String?) async -> [DiscoveredComputer]? {
+        var request = URLRequest(url: base.appendingPathComponent("peers"))
+        if let key, !key.isEmpty { request.setValue(key, forHTTPHeaderField: "X-Dictation-Key") }
+        if offTailnet(base) { return nil }
+        guard let (status, data) = try? await route(for: base).send(request), status == 200 else { return nil }
+        return PeerDirectory.parsePeers(data)
+    }
+
     func health(of base: URL, key: String?) async -> Health {
         var request = URLRequest(url: base.appendingPathComponent("status"))
         if let key, !key.isEmpty { request.setValue(key, forHTTPHeaderField: "X-Dictation-Key") }

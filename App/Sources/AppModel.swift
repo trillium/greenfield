@@ -14,6 +14,7 @@ final class AppModel {
     let health: TargetHealth
     let flow: FlowController
     let log: EventLog
+    let peers: PeerDirectory
 
     init(session: DictationSession, outbox: Outbox, targets: TargetStore, client: ReceiverClient = ReceiverClient(),
          models: ParrotModelStore = ParrotModelStore(), ruleStore: RuleStore = RuleStore(defaults: .standard),
@@ -25,6 +26,7 @@ final class AppModel {
         delivery = DeliveryService(outbox: outbox, targets: targets, client: client)
         health = TargetHealth(service: delivery)
         delivery.log = log
+        peers = PeerDirectory(service: delivery)
         flow = FlowController(session: session, delivery: delivery, models: models, ruleStore: ruleStore, log: log)
         log.add(.app, "app started, \(BuildInfo().display)")
     }

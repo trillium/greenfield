@@ -20,6 +20,18 @@ struct TargetsView: View {
                             Button("Edit", systemImage: "pencil") { editing = target }.tint(.blue)
                         }
                 }
+                if !model.peers.discovered.isEmpty {
+                    Section("Found on your network") {
+                        ForEach(model.peers.discovered) { computer in
+                            Button {
+                                model.peers.add(computer)
+                                Task { await model.health.refreshAll() }
+                            } label: {
+                                Label("\(computer.name)  \(computer.address)", systemImage: "plus.circle")
+                            }
+                        }
+                    }
+                }
                 Section {
                     Text("""
                     Text goes to exactly one computer: the active one (tap to choose). Computers on your tailnet are trusted by \
@@ -35,14 +47,22 @@ struct TargetsView: View {
                     Button("Add a computer", systemImage: "plus") { adding = true }
                 }
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Check", systemImage: "arrow.clockwise") { Task { await model.health.refreshAll() } }
+                    Button("Check", systemImage: "arrow.clockwise") {
+                        Task {
+                            await model.health.refreshAll()
+                            await model.peers.refresh()
+                        }
+                    }
                 }
             }
+            .onAppear { model.peers.startBonjour() }
+            .onDisappear { model.peers.stopBonjour() }
             .sheet(isPresented: $adding) { TargetEditView(model: model, target: nil) }
             .sheet(item: $editing) { TargetEditView(model: model, target: $0) }
             .task {
                 while !Task.isCancelled {
                     await model.health.refreshAll()
+                    await model.peers.refresh()
                     try? await Task.sleep(for: .seconds(15))
                 }
             }
