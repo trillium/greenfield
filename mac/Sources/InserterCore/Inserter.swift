@@ -124,16 +124,39 @@ private extension UTF16 {
 
 /// Reads the text of whatever has keyboard focus through the Accessibility API, when the app exposes it.
 public enum FocusedField {
-    public static func text() -> String? {
+    /// The focused element, asked of the frontmost app directly: that works in more session types than
+    /// the system-wide query, which can answer "cannot complete".
+    static func focusedElement() -> AXUIElement? {
+        if let app = NSWorkspace.shared.frontmostApplication {
+            let appEl = AXUIElementCreateApplication(app.processIdentifier)
+            AXUIElementSetMessagingTimeout(appEl, 0.5)
+            var focused: CFTypeRef?
+            let e = AXUIElementCopyAttributeValue(appEl, kAXFocusedUIElementAttribute as CFString, &focused)
+            if e == .success, let f = focused { return (f as! AXUIElement) }
+            debug("frontmost app (\(app.localizedName ?? "?")) focused element: AXError \(e.rawValue)")
+        }
         let system = AXUIElementCreateSystemWide()
         AXUIElementSetMessagingTimeout(system, 0.5)
         var focused: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
-              let element = focused else { return nil }
-        let el = element as! AXUIElement
+        let e = AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused)
+        if e == .success, let f = focused { return (f as! AXUIElement) }
+        debug("system-wide focused element: AXError \(e.rawValue)")
+        return nil
+    }
+
+    static func debug(_ message: String) {
+        if ProcessInfo.processInfo.environment["GREENFIELD_AX_DEBUG"] != nil {
+            FileHandle.standardError.write(Data("ax: \(message)\n".utf8))
+        }
+    }
+
+    public static func text() -> String? {
+        guard let el = focusedElement() else { return nil }
         AXUIElementSetMessagingTimeout(el, 0.5)
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(el, kAXValueAttribute as CFString, &value) == .success else { return nil }
+        let e = AXUIElementCopyAttributeValue(el, kAXValueAttribute as CFString, &value)
+        guard e == .success else { debug("value: AXError \(e.rawValue)"); return nil }
+        if !(value is String) { debug("value is not a string") }
         return value as? String
     }
 }

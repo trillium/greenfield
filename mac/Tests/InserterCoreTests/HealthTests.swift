@@ -3,10 +3,12 @@ import XCTest
 
 final class HealthTests: XCTestCase {
     func snap(listen: [String] = ["100.84.99.99:47821", "127.0.0.1:47821"], accessibility: Bool = true, locked: Bool = false,
-              secure: Bool = false, key: Bool = true, identity: Bool = true, version: String = "0.1.0") -> DaemonSnapshot {
+              secure: Bool = false, key: Bool = true, identity: Bool = true, version: String = "0.1.0",
+              insert: CanInsert.State = .ok) -> DaemonSnapshot {
         DaemonSnapshot(name: "m", version: version, listen: listen, accessibility: accessibility, screenLocked: locked,
                        secureInput: secure, keyConfigured: key, executable: nil, pid: 42,
-                       auth: "tailnet", identityOK: identity, tailnetUser: "me@example")
+                       auth: "tailnet", identityOK: identity, tailnetUser: "me@example",
+                       canInsert: CanInsert(state: insert, at: Date().addingTimeInterval(-120), source: "selftest", detail: "the field stayed empty"))
     }
     let local = HealthSubject.local(port: 47821)
     let remote = HealthSubject.remote(alias: "book", host: "book.ts.net", port: 47821)
@@ -19,7 +21,7 @@ final class HealthTests: XCTestCase {
     func testAllGoodIsHealthy() {
         let cs = checks(.ok(snap()))
         XCTAssertTrue(isHealthy(cs))
-        XCTAssertEqual(cs.map(\.id), ["daemon", "listening", "auth", "accessibility", "unlocked", "secure-input", "version"])
+        XCTAssertEqual(cs.map(\.id), ["daemon", "listening", "auth", "accessibility", "unlocked", "secure-input", "version", "can-insert"])
         XCTAssertTrue(formatHealth(label: "mini0", checks: cs).hasPrefix("mini0: HEALTHY"))
     }
 
@@ -82,7 +84,7 @@ final class HealthTests: XCTestCase {
         XCTAssertTrue(out.contains("1 problem found"))
         XCTAssertTrue(out.contains("wrong:")); XCTAssertTrue(out.contains("why:")); XCTAssertTrue(out.contains("fix:"))
         XCTAssertTrue(out.contains("Privacy & Security > Accessibility"))
-        XCTAssertTrue(formatDoctor(label: "x", checks: checks(.ok(snap()))).contains("all 7 checks passed"))
+        XCTAssertTrue(formatDoctor(label: "x", checks: checks(.ok(snap()))).contains("all 8 checks passed"))
     }
 
     func testParseSnapshot() {
@@ -160,7 +162,7 @@ final class HealthTests: XCTestCase {
         XCTAssertTrue(keyFileNote.contains("hash")); XCTAssertTrue(keyFileNote.contains("macs show-key"))
         // health and doctor output
         let ok = checks(.ok(snap()))
-        XCTAssertTrue(formatHealth(label: "m", checks: ok).contains(keyFileNote))
+        XCTAssertTrue(formatHealth(label: "m", checks: ok).contains(keyFileNote))      // snap() has a key set
         XCTAssertTrue(formatDoctor(label: "m", checks: ok).contains(keyFileNote))
         // a refused key (remote 401) carries it in the explanation
         let refused = checks(.unauthorized, remote).first { $0.id == "auth" }!
@@ -171,10 +173,33 @@ final class HealthTests: XCTestCase {
         let peer = peerChecks([MacReport(mac: mac, state: .unauthorized, name: nil, version: nil)], localVersion: "0.1.0")[0]
         XCTAssertTrue(peer.why.contains(keyFileNote))
         // host key-file check shows it too
-        XCTAssertTrue(formatDoctor(label: "m", checks: hostChecks(facts(), daemonExecutable: nil)).contains(keyFileNote))
+        XCTAssertTrue(formatDoctor(label: "m", checks: hostChecks(facts(), daemonExecutable: nil)).contains(keyFileNote))   // key file present
         // the daemon's own 401 and the client's reading of it say it too
         XCTAssertTrue(InserterClient.interpretSend(httpStatus: 401, body: Data()).summary.contains("macs show-key"))
         // and the note never leaks a key
         XCTAssertFalse(keyFileNote.contains("sha256:"))
+    }
+
+    func testCanInsertIsTheLastLineAndNeedsEvidence() {
+        let ok = checks(.ok(snap()))
+        XCTAssertEqual(ok.last?.id, "can-insert"); XCTAssertEqual(ok.last?.status, .pass)
+        XCTAssertTrue(ok.last!.detail.contains("2 minutes ago")); XCTAssertTrue(ok.last!.detail.contains("selftest"))
+        XCTAssertTrue(formatHealth(label: "m", checks: ok).contains("Can actually insert text"))
+        // no evidence yet, or a failed attempt, makes the Mac unhealthy and says how to fix it
+        for state in [CanInsert.State.unknown, .failed] {
+            let cs = checks(.ok(snap(insert: state)))
+            XCTAssertFalse(isHealthy(cs))
+            XCTAssertEqual(cs.last?.status, .fail)
+            XCTAssertFalse(cs.last!.why.isEmpty); XCTAssertTrue(cs.last!.fix.contains("selftest") || cs.last!.fix.contains("doctor"))
+        }
+        // a daemon too old to report it is skipped, not passed
+        var old = snap(); old.canInsert = nil
+        XCTAssertEqual(checks(.ok(old)).last?.status, .skip)
+    }
+
+    func testKeyNoteOnlyWhenAKeyMattersOrFails() {
+        XCTAssertFalse(formatHealth(label: "m", checks: checks(.ok(snap(key: false)))).contains("note:"))
+        XCTAssertTrue(formatHealth(label: "m", checks: checks(.ok(snap(key: true)))).contains("note:"))
+        XCTAssertTrue(formatDoctor(label: "m", checks: checks(.unauthorized, remote)).contains("note:"))
     }
 }

@@ -21,6 +21,9 @@ public enum DeliveryEvidence: Equatable {
 
 /// Decides what the before and after text of the focused field proves. nil means unreadable.
 public func judgeDelivery(before: String?, after: String?, text: String) -> DeliveryEvidence {
+    // A bare Return or whitespace is a key press, not text: it may leave the field's contents unchanged
+    // (a single-line field submits instead), so unchanged proves nothing.
+    if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .unconfirmed }
     guard let before = before, let after = after else { return .unconfirmed }
     if after == before { return .notDelivered }
     // Something changed: it only counts as proof if our text is in there (apps may rewrite it).

@@ -131,3 +131,14 @@ public func formatSelftest(label: String, checks: [HealthCheck], simulated: Bool
     }
     return lines.joined(separator: "\n")
 }
+
+
+/// Writes what a live selftest proved to the delivery ledger the daemon reports from. Only outcomes that
+/// say something about delivery count; a window that could not get focus proves nothing either way.
+public func recordSelftestEvidence(_ checks: [HealthCheck], ledger: DeliveryRecord) {
+    if selftestPassed(checks) { ledger.recordSuccess(source: "selftest"); return }
+    guard let failed = checks.first(where: { $0.status == .fail }) else { return }
+    if failed.id == "window" { return }
+    if failed.id == "preflight", !["accessibility granted", "daemon running"].contains(where: { failed.title.lowercased().contains($0) }) { return }
+    ledger.recordFailure(source: "selftest", detail: "\(failed.title): \(failed.detail)")
+}

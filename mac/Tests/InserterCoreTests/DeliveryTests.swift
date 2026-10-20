@@ -8,6 +8,9 @@ final class DeliveryTests: XCTestCase {
         XCTAssertEqual(judgeDelivery(before: nil, after: nil, text: "hello"), .unconfirmed)
         XCTAssertEqual(judgeDelivery(before: "a", after: nil, text: "hello"), .unconfirmed)
         XCTAssertEqual(judgeDelivery(before: "a", after: "b", text: "hello"), .unconfirmed)   // changed, but not by our text
+        // a bare Return is a key press: an unchanged field does not mean it was lost
+        XCTAssertEqual(judgeDelivery(before: "a", after: "a", text: "\n"), .unconfirmed)
+        XCTAssertEqual(judgeDelivery(before: "a", after: "a", text: "  "), .unconfirmed)
         // text that was already there does not count unless the field changed
         XCTAssertEqual(judgeDelivery(before: "hello", after: "hello", text: "hello"), .notDelivered)
     }

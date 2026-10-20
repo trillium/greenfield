@@ -43,6 +43,7 @@ public final class RequestHandler {
     private let name: () -> String
     private let listening: () -> [String]
     private let identity: TailnetIdentity?
+    private let record: DeliveryRecord?
     private let logger: RequestLogger?
     private let started: Date
     private let now: () -> Date
@@ -51,7 +52,7 @@ public final class RequestHandler {
 
     public init(keys: KeyVerifier, probe: SystemProbe, inserter: TextInserter, dedupe: DedupeCache = DedupeCache(),
                 name: @escaping () -> String, listening: @escaping () -> [String] = { [] },
-                identity: TailnetIdentity? = nil, logger: RequestLogger? = nil, now: @escaping () -> Date = Date.init) {
+                identity: TailnetIdentity? = nil, record: DeliveryRecord? = nil, logger: RequestLogger? = nil, now: @escaping () -> Date = Date.init) {
         self.keys = keys
         self.probe = probe
         self.inserter = inserter
@@ -59,6 +60,7 @@ public final class RequestHandler {
         self.name = name
         self.listening = listening
         self.identity = identity
+        self.record = record
         self.logger = logger
         self.now = now
         self.started = now()
@@ -124,6 +126,22 @@ public final class RequestHandler {
 
     private func status() -> HTTPResponse { .json(200, statusFields()) }
 
+    /// The delivery line for GET /status, in the shapes the phone reads: flat `can_insert` (bool),
+    /// `delivery_message`, `delivery_fix`, and the same inside a `delivery` object. `evidence` is the raw record.
+    private func deliveryFields() -> [String: Any] {
+        let evidence = record?.canInsert() ?? CanInsert(state: .unknown, at: nil, source: nil, detail: "delivery is not tracked")
+        let line = canInsertCheck(evidence, remote: false, onThatMac: "On the computer", bin: InserterDefaults.installedBinary)
+        let ok = evidence.state == .ok
+        var delivery: [String: Any] = [
+            "ok": ok, "can_insert": ok, "state": evidence.state.rawValue,
+            "message": line.detail, "text": line.detail, "fix": line.fix,
+        ]
+        if let at = evidence.at { delivery["at"] = ISO8601DateFormatter().string(from: at) }
+        if let source = evidence.source { delivery["source"] = source }
+        return ["can_insert": ok, "delivery_message": line.detail, "delivery_fix": line.fix,
+                "delivery": delivery, "evidence": evidence.json]
+    }
+
     private func statusFields() -> [String: Any] {
         insertLock.lock()
         let count = insertedCount
@@ -143,7 +161,7 @@ public final class RequestHandler {
             "key_configured": keys.verify(nil) != .notConfigured,
             "tailnet_user": identity?.selfLogin() ?? NSNull(),
             "identity_ok": identity?.selfLogin() != nil,
-        ]
+        ].merging(deliveryFields()) { _, new in new }
     }
 
     private func postText(_ request: HTTPRequest) -> HTTPResponse {
@@ -194,6 +212,7 @@ public final class RequestHandler {
         do {
             let used = try inserter.insert(text, method: method)
             insertedCount += 1
+            if used.delivery == .confirmed { record?.recordSuccess(source: "delivery") }
             logger?.log("text id=\(id) source=\(source) sent chars=\(text.count) method=\(used.method.rawValue) delivery=\(used.delivery.rawValue)")
             let response = HTTPResponse.json(200, [
                 "ok": true, "id": id, "chars": text.count, "method": used.method.rawValue,
@@ -204,6 +223,7 @@ public final class RequestHandler {
         } catch InsertError.accessibilityNotGranted {
             return .error(503, "accessibility_not_granted", "grant Accessibility to greenfield-inserter in System Settings")
         } catch InsertError.notDelivered {
+            record?.recordFailure(source: "delivery", detail: "the focused field did not change after the keys were sent")
             logger?.log("text id=\(id) source=\(source) not delivered: the focused field did not change")
             return .error(502, "not_delivered", "the keys were sent but the focused field did not change; nothing was inserted")
         } catch {

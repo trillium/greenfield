@@ -182,7 +182,7 @@ public enum InserterClient {
             let method = object["method"] as? String ?? "?"
             let delivery = object["delivery"] as? String
             let summary = delivery == "unconfirmed"
-                ? "sent via \(method), arrival unconfirmed (that app does not expose its text)"
+                ? "sent via \(method); arrival could not be confirmed (a key press, or an app that does not expose its text)"
                 : "inserted (\(method)\(delivery == "confirmed" ? ", confirmed" : ""))"
             return SendResult(httpStatus: 200, summary: summary, inserted: true, delivery: delivery)
         case 502: return SendResult(httpStatus: 502, summary: "not delivered: the focused field did not change", inserted: false)

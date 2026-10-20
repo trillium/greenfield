@@ -42,6 +42,8 @@ public struct DaemonSnapshot: Equatable {
     /// Whether the daemon can ask Tailscale who is calling (nil for older daemons).
     public var identityOK: Bool?
     public var tailnetUser: String?
+    /// Evidence that text really arrives; nil for daemons that predate it.
+    public var canInsert: CanInsert?
 
     public static func parse(_ body: Data) -> DaemonSnapshot? {
         guard let o = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
@@ -53,7 +55,8 @@ public struct DaemonSnapshot: Equatable {
             // /status only answers when the key matched, so a key must exist.
             keyConfigured: o["key_configured"] as? Bool ?? true,
             executable: (o["executable"] as? String).flatMap { $0.isEmpty ? nil : $0 }, pid: o["pid"] as? Int,
-            auth: o["auth"] as? String, identityOK: o["identity_ok"] as? Bool, tailnetUser: o["tailnet_user"] as? String)
+            auth: o["auth"] as? String, identityOK: o["identity_ok"] as? Bool, tailnetUser: o["tailnet_user"] as? String,
+            canInsert: CanInsert.parse(o["evidence"]))
     }
 }
 
@@ -100,7 +103,7 @@ public func snapshotChecks(_ outcome: SnapshotOutcome, subject: HealthSubject, l
             fix: remote
                 ? "Run `tailscale status` here to see if that Mac is online, then on that Mac: `\(bin) doctor` (over ssh if you can)."
                 : "If it is installed: `launchctl kickstart -k gui/$(id -u)/\(InserterDefaults.launchdLabel)`. If not: `make -C mac install` from the repo."))
-        return checks + ["listening", "auth", "accessibility", "unlocked", "secure-input", "version"].map {
+        return checks + ["listening", "auth", "accessibility", "unlocked", "secure-input", "version", "can-insert"].map {
             HealthCheck($0, titleFor($0), .skip, detail: "not checked: daemon not reachable")
         }
     case .forbidden:
@@ -120,21 +123,21 @@ public func snapshotChecks(_ outcome: SnapshotOutcome, subject: HealthSubject, l
         checks.append(HealthCheck("auth", "Allowed by tailnet identity", .fail, detail: "that Mac refused this device",
             why: "Each Mac accepts only devices of its own tailnet user (or a key, if you set one), and answers HTTP 401 to the rest, so nothing can be inserted. " + keyFileNote,
             fix: "Sign this device and that Mac into the same Tailscale user (`tailscale status` on both shows the user). To allow a device of another user instead, give it that Mac's optional key: `greenfield-inserter macs add \(alias) \(subjectHost(subject)) --key`."))
-        return checks + ["listening", "accessibility", "unlocked", "secure-input", "version"].map {
+        return checks + ["listening", "accessibility", "unlocked", "secure-input", "version", "can-insert"].map {
             HealthCheck($0, titleFor($0), .skip, detail: "not checked: request refused")
         }
     case .identityUnavailable:
         checks.append(HealthCheck("auth", "Tailnet identity check works", .fail, detail: "\(remote ? "that Mac" : "the daemon") cannot ask Tailscale who is calling (HTTP 503)",
             why: "The daemon refuses every request it cannot attribute to a tailnet user (it fails closed), so nothing can be inserted.",
             fix: "\(onThatMac): make sure Tailscale is running and signed in (`tailscale status`) and that the command-line tool exists at /Applications/Tailscale.app/Contents/MacOS/Tailscale or /opt/homebrew/bin/tailscale."))
-        return checks + ["listening", "accessibility", "unlocked", "secure-input", "version"].map {
+        return checks + ["listening", "accessibility", "unlocked", "secure-input", "version", "can-insert"].map {
             HealthCheck($0, titleFor($0), .skip, detail: "not checked: identity check failing")
         }
     case .keyNotSet:
         checks.append(HealthCheck("auth", "Allowed without a key", .fail, detail: "older daemon: it still demands a key and none is set",
             why: "Daemons before the tailnet-identity change refuse every request until a key exists.",
             fix: "Update it: copy the repo's mac/ folder to \(remote ? "that Mac" : "this Mac") and run `make -C mac install`."))
-        return checks + ["listening", "accessibility", "unlocked", "secure-input", "version"].map {
+        return checks + ["listening", "accessibility", "unlocked", "secure-input", "version", "can-insert"].map {
             HealthCheck($0, titleFor($0), .skip, detail: "not checked: no key")
         }
     case .unexpected(let code):
@@ -166,6 +169,7 @@ private func titleFor(_ id: String) -> String {
     case "unlocked": return "Screen not locked"
     case "secure-input": return "No secure input"
     case "version": return "Version"
+    case "can-insert": return "Can actually insert text"
     default: return id
     }
 }
@@ -224,7 +228,37 @@ private func okChecks(_ s: DaemonSnapshot, subject: HealthSubject, remote: Bool,
             fix: "Copy the repo's mac/ folder to that Mac and run `make install` there.")
     }
     out.append(version)
+    out.append(canInsertCheck(s.canInsert, remote: remote, onThatMac: onThatMac, bin: bin))
     return out
+}
+
+private func ago(_ date: Date?, now: Date = Date()) -> String {
+    guard let date = date else { return "at an unknown time" }
+    let s = Int(now.timeIntervalSince(date))
+    if s < 90 { return "\(max(s, 0)) seconds ago" }
+    if s < 5400 { return "\(s / 60) minutes ago" }
+    if s < 172800 { return "\(s / 3600) hours ago" }
+    return "\(s / 86400) days ago"
+}
+
+func canInsertCheck(_ c: CanInsert?, remote: Bool, onThatMac: String, bin: String) -> HealthCheck {
+    let title = titleFor("can-insert")
+    guard let c = c else {
+        return HealthCheck("can-insert", title, .skip, detail: "this daemon is too old to report delivery evidence")
+    }
+    switch c.state {
+    case .ok:
+        let how = c.source == "selftest" ? "by the selftest" : "by a real delivery"
+        return HealthCheck("can-insert", title, .pass, detail: "text was read back from a field \(ago(c.at)) \(how)")
+    case .failed:
+        return HealthCheck("can-insert", title, .fail, detail: "the last attempt \(ago(c.at)) did not arrive: \(c.detail)",
+            why: "The daemon sent the keys and could see that the text did not appear, so dictation would be lost.",
+            fix: "\(onThatMac): run `\(bin) doctor` (it re-runs the live test). Usual cause: Accessibility belongs to a different file than the one running; switch greenfield-inserter off and on again under Privacy & Security > Accessibility.")
+    case .unknown:
+        return HealthCheck("can-insert", title, .fail, detail: c.detail,
+            why: "Nothing has proven that text arrives since the daemon started, so \"inserted\" cannot be promised.",
+            fix: "\(onThatMac): run `\(bin) selftest` (opens a small window for a few seconds), or send one real text and `health` will pick up the confirmed delivery.")
+    }
 }
 
 // MARK: - host checks (doctor on the Mac itself)
@@ -331,6 +365,14 @@ public func peerChecks(_ reports: [MacReport], localVersion: String) -> [HealthC
 
 // MARK: - formatting
 
+/// The "key file holds only a hash" note matters only when a key exists or a key problem is on screen.
+func keyNoteRelevant(_ checks: [HealthCheck]) -> Bool {
+    checks.contains { c in
+        (c.id == "auth" && (c.status == .fail || c.detail.contains("key set"))) ||
+        (c.id == "keyfile" && !c.detail.hasPrefix("no key set"))
+    }
+}
+
 public func isHealthy(_ checks: [HealthCheck]) -> Bool { checks.allSatisfy { $0.status == .pass } }
 
 private func mark(_ s: HealthCheck.Status) -> String {
@@ -342,7 +384,7 @@ public func formatHealth(label: String, checks: [HealthCheck]) -> String {
     for c in checks {
         lines.append("  \(mark(c.status))  \(c.title)" + (c.detail.isEmpty ? "" : " - \(c.detail)"))
     }
-    if checks.contains(where: { $0.id == "auth" || $0.id == "keyfile" }) { lines.append("  note: " + keyFileNote) }
+    if keyNoteRelevant(checks) { lines.append("  note: " + keyFileNote) }
     return lines.joined(separator: "\n")
 }
 
@@ -358,6 +400,6 @@ public func formatDoctor(label: String, checks: [HealthCheck]) -> String {
         lines.append("        why:   \(c.why)")
         lines.append("        fix:   \(c.fix)")
     }
-    if checks.contains(where: { $0.id == "auth" || $0.id == "keyfile" }) { lines += ["", "  note: " + keyFileNote] }
+    if keyNoteRelevant(checks) { lines += ["", "  note: " + keyFileNote] }
     return lines.joined(separator: "\n")
 }

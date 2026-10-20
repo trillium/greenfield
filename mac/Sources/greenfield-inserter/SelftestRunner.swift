@@ -80,7 +80,9 @@ func runSelftest(port: Int, simulate: Bool) -> SelftestObservations {
 
     if !simulate {
         let health = InserterClient.snapshot(host: "127.0.0.1", port: port, key: nil, path: "/health")
+        // "Can actually insert text" is what this run is about to establish, so it cannot be a precondition.
         o.preflight = snapshotChecks(health, subject: .local(port: port), localVersion: RequestHandler.version)
+            .filter { $0.id != "can-insert" }
         if o.preflight.contains(where: { $0.status == .fail }) { return o }
     }
 

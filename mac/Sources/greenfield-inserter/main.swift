@@ -56,7 +56,7 @@ case "serve":
     var server: HTTPServer!
     let handler = RequestHandler(keys: keys, probe: MacSystemProbe(), inserter: MacInserter(),
                                  name: { nameOverride ?? macName.current() }, listening: { server.listening() },
-                                 identity: TailscaleIdentity(), logger: logger)
+                                 identity: TailscaleIdentity(), record: DeliveryLedger(paths: paths), logger: logger)
     logger.log("starting \(RequestHandler.serviceName) \(RequestHandler.version) name=\(nameOverride ?? macName.current())")
     logger.log("authorization: loopback, same tailnet user\(keys.isConfigured ? ", or the optional key" : "") (no key needed)")
     if !MacSystemProbe().accessibilityTrusted { logger.log("Accessibility not granted; run `greenfield-inserter permissions`") }
@@ -104,7 +104,15 @@ case "name":
 case "health", "doctor":
     let port = Int(option("--port", in: args) ?? String(InserterDefaults.port)) ?? 0
     guard port > 0, port < 65536 else { fail("bad --port", code: 2) }
-    let outcome = InserterClient.snapshot(host: "127.0.0.1", port: port, key: nil, path: "/health")
+    var outcome = InserterClient.snapshot(host: "127.0.0.1", port: port, key: nil, path: "/health")
+    if args[0] == "doctor", !args.contains("--no-selftest"), case .ok = outcome,
+       snapshotChecks(outcome, subject: .local(port: port), localVersion: RequestHandler.version)
+           .allSatisfy({ $0.id == "can-insert" || $0.status == .pass }) {
+        // Everything else is fine: prove delivery for real (opens a small window for a few seconds).
+        let live = evaluateSelftest(runSelftest(port: port, simulate: false))
+        recordSelftestEvidence(live, ledger: DeliveryLedger(paths: paths))
+        outcome = InserterClient.snapshot(host: "127.0.0.1", port: port, key: nil, path: "/health")
+    }
     var checks = snapshotChecks(outcome, subject: .local(port: port), localVersion: RequestHandler.version)
     let label = macName.current()
     if args[0] == "doctor" {
@@ -129,6 +137,7 @@ case "selftest":
     let simulate = args.contains("--simulate-delivery")   // development only: proves the window, not delivery
     let observations = runSelftest(port: port, simulate: simulate)
     let checks = evaluateSelftest(observations)
+    if !simulate { recordSelftestEvidence(checks, ledger: DeliveryLedger(paths: paths)) }
     print(formatSelftest(label: macName.current(), checks: checks, simulated: simulate))
     exit(selftestPassed(checks) && !simulate ? 0 : 1)
 

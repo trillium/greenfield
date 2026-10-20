@@ -178,6 +178,18 @@ final class HandlerTests: XCTestCase {
         XCTAssertEqual(call(identityHandler(StubIdentity()), key: "wrong").status, 200)
     }
 
+    func testOkDeliveryHasNoFixAndIsTrue() {
+        final class Ok: DeliveryRecord {
+            func recordSuccess(source: String) {}; func recordFailure(source: String, detail: String) {}
+            func canInsert() -> CanInsert { CanInsert(state: .ok, at: Date(), source: "selftest", detail: "d") }
+        }
+        let h = RequestHandler(keys: keys, probe: probe, inserter: inserter, name: { "m" }, record: Ok(), logger: logger)
+        let st = object(h.handle(HTTPRequest(method: "GET", path: "/status", headers: ["x-dictation-key": "good"])))
+        XCTAssertEqual(st["can_insert"] as? Bool, true)
+        XCTAssertEqual(st["delivery_fix"] as? String, "")
+        XCTAssertTrue((st["delivery_message"] as? String ?? "").contains("read back"))
+    }
+
     func testStatusReportsTailnetAuthMode() {
         let id = StubIdentity()
         let o = object(call(identityHandler(id)))
@@ -292,6 +304,34 @@ final class HandlerTests: XCTestCase {
         XCTAssertEqual(object(post(#"{"id":"c1","text":"x"}"#))["delivery"] as? String, "confirmed")
         inserter.delivery = .unconfirmed
         XCTAssertEqual(object(post(#"{"id":"c2","text":"x"}"#))["delivery"] as? String, "unconfirmed")
+    }
+
+    func testDeliveryEvidenceIsRecordedAndReported() {
+        final class Rec: DeliveryRecord {
+            var events: [String] = []
+            func recordSuccess(source: String) { events.append("ok:\(source)") }
+            func recordFailure(source: String, detail: String) { events.append("fail:\(source)") }
+            func canInsert() -> CanInsert { CanInsert(state: events.last?.hasPrefix("ok") == true ? .ok : .failed, at: Date(), source: "delivery", detail: "d") }
+        }
+        let rec = Rec()
+        let h = RequestHandler(keys: keys, probe: probe, inserter: inserter, name: { "m" }, record: rec, logger: logger)
+        _ = h.handle(HTTPRequest(method: "POST", path: "/text", headers: ["x-dictation-key": "good"], body: Data(#"{"id":"r1","text":"x"}"#.utf8)))
+        inserter.delivery = .unconfirmed                   // unreadable target: not evidence either way
+        _ = h.handle(HTTPRequest(method: "POST", path: "/text", headers: ["x-dictation-key": "good"], body: Data(#"{"id":"r2","text":"x"}"#.utf8)))
+        inserter.error = InsertError.notDelivered
+        _ = h.handle(HTTPRequest(method: "POST", path: "/text", headers: ["x-dictation-key": "good"], body: Data(#"{"id":"r3","text":"x"}"#.utf8)))
+        XCTAssertEqual(rec.events, ["ok:delivery", "fail:delivery"])
+        let s = h.handle(HTTPRequest(method: "GET", path: "/health", fromLoopback: true))
+        XCTAssertNotNil((object(s)["evidence"] as? [String: Any])?["state"])
+        let st = object(h.handle(HTTPRequest(method: "GET", path: "/status", headers: ["x-dictation-key": "good"])))
+        // the phone's contract: flat fields and a delivery object, in a tailnet-reachable /status
+        XCTAssertEqual(st["can_insert"] as? Bool, false)                    // last event was a failure
+        XCTAssertFalse((st["delivery_message"] as? String ?? "").isEmpty)
+        XCTAssertFalse((st["delivery_fix"] as? String ?? "").isEmpty)
+        let d = st["delivery"] as? [String: Any]
+        XCTAssertEqual(d?["ok"] as? Bool, false); XCTAssertEqual(d?["can_insert"] as? Bool, false)
+        XCTAssertEqual(d?["message"] as? String, st["delivery_message"] as? String)
+        XCTAssertEqual(d?["fix"] as? String, st["delivery_fix"] as? String)
     }
 
     func testNotDeliveredIs502AndCanBeRetried() {
