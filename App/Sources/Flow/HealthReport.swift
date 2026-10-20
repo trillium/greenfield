@@ -154,21 +154,20 @@ enum HealthReport {
         let title = computer.name + (computer.isActive ? " (active)" : "")
         let id = "computer-" + computer.name
         let agent = "greenfield-inserter"
-        guard computer.hasKey else {
-            return HealthItem(id: id, title: title, level: .problem, detail: "No key is saved for this computer on the phone.",
-                              fix: "On \(computer.name) run `\(agent) macs show-key \(computer.name)` (or create the key with `\(agent) key create`), then enter it under Computers.")
-        }
         guard let answer = computer.answer else {
             return HealthItem(id: id, title: title, level: .warning, detail: "Not checked yet.", fix: "Tap Check again.")
         }
         switch answer {
         case .ready(let status): return ready(status, id: id, title: title, name: computer.name)
+        case .wrongKey where computer.hasKey:
+            return HealthItem(id: id, title: title, level: .problem, detail: "The computer is reachable but refuses the key saved for it.",
+                              fix: "Open the computer under Computers > Advanced and remove the saved key (computers on the tailnet need none), or enter the right one.")
         case .wrongKey:
-            return HealthItem(id: id, title: title, level: .problem, detail: "The computer is reachable but the key is wrong.",
-                              fix: "On \(computer.name) show the key again (`\(agent) macs show-key`) and re-enter it under Computers.")
+            return HealthItem(id: id, title: title, level: .problem, detail: "The computer is reachable but its input agent asks for a key.",
+                              fix: "Update the agent on \(computer.name) (`\(agent)`) to the version that trusts the tailnet, or add its key under Computers > Advanced.")
         case .keyNotSetOnMac:
-            return HealthItem(id: id, title: title, level: .problem, detail: "The computer is reachable but its input agent has no key yet.",
-                              fix: "On \(computer.name) run `\(agent) key create`, then enter that key under Computers.")
+            return HealthItem(id: id, title: title, level: .problem, detail: "The computer is reachable but its input agent is not set up yet.",
+                              fix: "On \(computer.name) update and restart the agent (`\(agent) health` says what is missing).")
         case .incompatible(let message):
             return HealthItem(id: id, title: title, level: .problem, detail: message, fix: "Update the app or the agent so their versions match.")
         case .unreachable(let reason):

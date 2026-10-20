@@ -58,17 +58,27 @@ final class DeliveryServiceTests: XCTestCase {
         XCTAssertEqual(outbox.item(id)?.lastError, ReceiverClient.Refusal.locked.message)
     }
 
-    func testAComputerWithoutAKeyIsNotContactedAndSaysWhy() async throws {
-        StubURLProtocol.install { _ in (200, json(["ok": true])) }
+    func testAComputerWithoutAKeyIsContactedWithoutTheHeader() async throws {
+        StubURLProtocol.install { _ in (200, json(["ok": true, "status": "inserted", "duplicate": false])) }
         let rig = try makeService()
         let target = try XCTUnwrap(rig.store.selected)
         try rig.store.save(target, key: "")
         let id = rig.outbox.add(text: "x").id
-        let outcome = await rig.service.deliver(id)
-        XCTAssertNil(outcome)
-        XCTAssertEqual(rig.outbox.item(id)?.lastError, "No key is set for MacBook. Enter it in the Computers tab.")
-        XCTAssertEqual(rig.outbox.item(id)?.targetName, "MacBook")
-        XCTAssertTrue(StubURLProtocol.requests.isEmpty)
+        _ = await rig.service.deliver(id)
+        XCTAssertEqual(rig.outbox.item(id)?.status, .sent, "tailnet identity is the credential; no key is needed")
+        XCTAssertNil(StubURLProtocol.requests.first?.value(forHTTPHeaderField: "X-Dictation-Key"))
+    }
+
+    func testADaemonThatAsksForAKeyIsExplainedNotHidden() async throws {
+        StubURLProtocol.install { _ in (401, json(["ok": false, "error": "unauthorized"])) }
+        let rig = try makeService()
+        let target = try XCTUnwrap(rig.store.selected)
+        try rig.store.save(target, key: "")
+        let id = rig.outbox.add(text: "x").id
+        _ = await rig.service.deliver(id)
+        XCTAssertEqual(rig.outbox.item(id)?.status, .pending)
+        XCTAssertTrue(rig.outbox.item(id)?.lastError?.contains("asks for a key") ?? false)
+        XCTAssertTrue(rig.outbox.item(id)?.lastError?.contains("Advanced") ?? false)
     }
 
     func testNoMacSelectedKeepsTheTextWithoutSending() async throws {

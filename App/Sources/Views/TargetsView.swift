@@ -22,8 +22,8 @@ struct TargetsView: View {
                 }
                 Section {
                     Text("""
-                    Text goes to exactly one computer: the active one (tap to choose). Each computer has its own key; on the \
-                    computer, `greenfield-inserter macs show-key <name>` shows it. Use the tailnet name \
+                    Text goes to exactly one computer: the active one (tap to choose). Computers on your tailnet are trusted by \
+                    tailnet identity, so there is no key to type. Use the tailnet name \
                     (for example macbook.your-tailnet.ts.net), a short name, or the 100.x address, optionally with :port \
                     (default 47821). The phone must be connected to the tailnet (Tailscale on).
                     """).font(.footnote).foregroundStyle(.secondary)
@@ -100,9 +100,17 @@ struct TargetEditView: View {
                     }
                 }
                 Section {
-                    SecureField(target == nil ? "Key" : "Key (leave empty to keep the saved one)", text: $key)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
-                } footer: { Text("The key is stored in the iPhone Keychain, on this phone only. It is never shown again.") }
+                    DisclosureGroup("Advanced") {
+                        SecureField(target == nil ? "Key (only if it asks for one)" : "Key (empty keeps the saved one)", text: $key)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        if let target, model.targets.key(for: target) != nil {
+                            Button("Remove the saved key", role: .destructive) { removeKey(target) }
+                        }
+                        Text("Computers on your tailnet are trusted by tailnet identity, so no key is needed. Add one only if this "
+                             + "computer's agent asks for it. It is kept in the iPhone Keychain, on this phone only.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
                 Section {
                     Button("Test connection") { Task { await test() } }.disabled(!draft.isValid)
                     if let testResult { Text(testResult).font(.footnote) }
@@ -123,6 +131,12 @@ struct TargetEditView: View {
         }
     }
 
+    private func removeKey(_ target: MacTarget) {
+        try? model.targets.save(target, key: "")
+        Task { await model.health.refresh(target) }
+        testResult = "Saved key removed."
+    }
+
     private func save() {
         do {
             try model.targets.save(draft, key: key.isEmpty ? nil : key)
@@ -140,8 +154,8 @@ struct TargetEditView: View {
         testResult = switch health {
         case .ready(let status):
             TargetHealth.state(from: .ready(status)).summary + (status.name.isEmpty ? "" : ": \(status.name)")
-        case .wrongKey: "Reachable, but the key is wrong."
-        case .keyNotSetOnMac: "Reachable, but that computer has no key set yet."
+        case .wrongKey: "Reachable, but it asks for a key. Add one under Advanced."
+        case .keyNotSetOnMac: "Reachable, but its input agent is not set up yet."
         case .incompatible(let message), .unreachable(let message): message
         }
     }

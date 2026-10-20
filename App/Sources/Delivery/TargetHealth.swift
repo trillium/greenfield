@@ -6,7 +6,7 @@ import Foundation
 final class TargetHealth {
     enum State: Equatable {
         case unknown, checking
-        case ready(ReceiverClient.MacStatus), notice(String), noKey, wrongKey, keyNotSetOnMac, incompatible(String), unreachable(String)
+        case ready(ReceiverClient.MacStatus), notice(String), wrongKey, keyNotSetOnMac, incompatible(String), unreachable(String)
 
         var summary: String {
             switch self {
@@ -14,9 +14,8 @@ final class TargetHealth {
             case .checking: return "Checking"
             case .ready(let status): return status.version.isEmpty ? "Ready" : "Ready (agent \(status.version))"
             case .notice(let message): return message
-            case .noKey: return "Enter this computer's key"
-            case .wrongKey: return "Wrong key"
-            case .keyNotSetOnMac: return "No key set on that computer yet"
+            case .wrongKey: return "Asks for a key (see Advanced)"
+            case .keyNotSetOnMac: return "Its input agent is not set up yet"
             case .incompatible(let message): return message
             case .unreachable(let message): return message
             }
@@ -33,10 +32,6 @@ final class TargetHealth {
     func state(for target: MacTarget) -> State { states[target.id] ?? .unknown }
 
     func refresh(_ target: MacTarget) async {
-        guard let key = service.targets.key(for: target), !key.isEmpty else {
-            states[target.id] = .noKey
-            return
-        }
         states[target.id] = .checking
         let answer = await service.health(of: target)
         answers[target.id] = answer

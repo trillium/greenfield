@@ -25,8 +25,8 @@ struct ReceiverClient: Sendable {
 
         var message: String {
             switch self {
-            case .badKey: return "The key for this computer is wrong."
-            case .keyNotConfigured: return "No key is set on that computer yet."
+            case .badKey: return "This computer asks for a key, or refuses the saved one. Fix it under Advanced in its settings."
+            case .keyNotConfigured: return "That computer's input agent is not set up yet. Update or restart it."
             case .secureInput: return "A password field is focused on the computer."
             case .locked: return "The computer's screen is locked."
             case .needsAccessibility: return "The computer's input agent needs Accessibility approval."
@@ -51,7 +51,7 @@ struct ReceiverClient: Sendable {
     enum Health: Equatable, Sendable {
         case ready(MacStatus)
         case wrongKey
-        /// The Mac answered 503 `key_not_configured`: its agent has no key yet.
+        /// The Mac answered 503 `key_not_configured`: an older agent that wants a key and has none yet.
         case keyNotSetOnMac
         case incompatible(String)
         case unreachable(String)

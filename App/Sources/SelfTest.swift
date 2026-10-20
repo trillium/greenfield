@@ -137,18 +137,15 @@ final class SelfTest {
         say("scenarios: \(passed) passed, \(failed) failed")
     }
 
-    /// Asks every listed computer for its status with a throwaway key (set only where none is saved, then removed), so the real agents'
-    /// answers can be checked without anyone's secret. `-selftest-health YES`.
+    /// Asks every listed computer for its status exactly as the app does (no key unless one is saved) and prints the Health report.
+    /// `-selftest-health YES`.
     private func checkHealth() async {
         say("tailnet connected: \(Tailnet.isConnected())")
         for target in model.targets.targets {
-            let borrowed = model.targets.key(for: target) == nil
-            if borrowed { try? model.targets.save(target, key: "selftest-not-a-real-key") }
             await model.health.refresh(target)
             say("\(target.name) (\(target.address)): \(model.health.state(for: target).summary)")
-            if borrowed { try? model.targets.save(target, key: "") }
         }
-        // The Health screen's own report, as the person would read it (computers without a key show as needing one).
+        // The Health screen's own report, as the person would read it .
         for item in model.healthReport() {
             say("HEALTH \(item.level == .ok ? "ok     " : item.level == .warning ? "warning" : "PROBLEM") \(item.title): \(item.detail)"
                 + (item.fix.map { " FIX: \($0)" } ?? ""))

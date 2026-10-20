@@ -45,7 +45,7 @@ struct HealthDot: View {
     private var color: Color {
         switch state {
         case .ready: return .green
-        case .notice, .noKey, .wrongKey, .keyNotSetOnMac, .incompatible: return .orange
+        case .notice, .wrongKey, .keyNotSetOnMac, .incompatible: return .orange
         case .unreachable: return .red
         case .unknown, .checking: return .gray
         }

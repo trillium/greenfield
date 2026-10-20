@@ -29,13 +29,7 @@ final class DeliveryService {
         inFlight.insert(id)
         defer { inFlight.remove(id) }
         outbox.markAttempt(id, targetName: target.name)
-        guard let key = targets.key(for: target), !key.isEmpty else {
-            let reason = "No key is set for \(target.name). Enter it in the Computers tab."
-            outbox.markFailed(id, reason: reason)
-            log?.add(.send, "not sent to \(target.name): no key saved on the phone")
-            return nil
-        }
-        let (outcome, networkMs) = await client.send(id: id, text: item.text, to: base, key: key)
+        let (outcome, networkMs) = await client.send(id: id, text: item.text, to: base, key: targets.key(for: target))
         switch outcome {
         case .delivered(let duplicate, let macMs):
             outbox.markSent(id, networkMs: networkMs, macMs: macMs)

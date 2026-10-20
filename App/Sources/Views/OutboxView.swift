@@ -62,7 +62,7 @@ struct OutboxRow: View {
     }
 }
 
-/// Why an item is still waiting, in plain words: "The key for this computer is wrong.", "No key is set for mini0."
+/// Why an item is still waiting, in plain words: "This computer asks for a key.", "The computer could not be reached."
 struct WaitingReason: View {
     let item: OutboxItem
     let sending: Bool

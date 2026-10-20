@@ -17,6 +17,13 @@ final class HealthReportTests: XCTestCase {
         return input
     }
 
+    private func healthyWithoutKeys() -> HealthInputs {
+        var input = healthy()
+        input.computers = [.init(name: "mini0", address: "mini0.example.ts.net", isActive: true, hasKey: false,
+                                 answer: .ready(ReceiverClient.MacStatus(name: "mini0")))]
+        return input
+    }
+
     private func item(_ id: String, _ input: HealthInputs) -> HealthItem? { HealthReport.build(input).first { $0.id == id } }
 
     func testEverythingWorkingHasNoFixes() {
@@ -61,9 +68,12 @@ final class HealthReportTests: XCTestCase {
         func check(_ answer: ReceiverClient.Health?, hasKey: Bool = true) -> HealthItem {
             HealthReport.computer(.init(name: "macbook", address: "macbook.example.ts.net", isActive: true, hasKey: hasKey, answer: answer))
         }
-        XCTAssertTrue(check(nil, hasKey: false).fix?.contains("show-key") ?? false)
-        XCTAssertTrue(check(.wrongKey).detail.contains("key is wrong"))
-        XCTAssertTrue(check(.keyNotSetOnMac).fix?.contains("key create") ?? false)
+        let keyless = check(.ready(ReceiverClient.MacStatus()), hasKey: false)
+        XCTAssertEqual(keyless.level, .ok, "a missing key is never a problem")
+        XCTAssertFalse(HealthReport.build(healthyWithoutKeys()).contains { $0.detail.lowercased().contains("no key") })
+        XCTAssertTrue(check(.wrongKey, hasKey: false).detail.contains("asks for a key"))
+        XCTAssertTrue(check(.wrongKey, hasKey: true).fix?.contains("remove the saved key") ?? false)
+        XCTAssertTrue(check(.keyNotSetOnMac).fix?.contains("update and restart") ?? false)
         XCTAssertTrue(check(.ready(ReceiverClient.MacStatus(accessibility: false))).fix?.contains("Accessibility") ?? false)
         XCTAssertEqual(check(.ready(ReceiverClient.MacStatus(locked: true))).level, .warning)
         XCTAssertEqual(check(.ready(ReceiverClient.MacStatus(secureInput: true))).level, .warning)

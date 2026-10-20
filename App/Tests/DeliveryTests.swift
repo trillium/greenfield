@@ -243,17 +243,14 @@ final class PresetComputersTests: XCTestCase {
         XCTAssertTrue(store.targets.isEmpty)
     }
 
-    func testAComputerWithoutAKeyShowsAsNeedingOne() async throws {
+    func testAComputerWithoutAKeyIsCheckedAndShownAsReady() async {
         let store = TargetStore(defaults: isolatedDefaults(), keys: MemoryKeyStore())
         store.seedPresets("alpha=alpha.example.ts.net")
         let client = ReceiverClient(session: StubURLProtocol.session(), tailnetConnected: { true })
         let health = TargetHealth(service: DeliveryService(outbox: Outbox(url: nil), targets: store, client: client))
         StubURLProtocol.install { _ in (200, json(["ok": true])) }
         await health.refreshAll()
-        XCTAssertEqual(health.state(for: store.targets[0]), .noKey)
-        XCTAssertTrue(StubURLProtocol.requests.isEmpty, "no request is sent without a key")
-        try store.save(store.targets[0], key: "k")
-        await health.refreshAll()
         XCTAssertEqual(health.state(for: store.targets[0]), .ready(ReceiverClient.MacStatus()))
+        XCTAssertNil(StubURLProtocol.requests.first?.value(forHTTPHeaderField: "X-Dictation-Key"))
     }
 }
