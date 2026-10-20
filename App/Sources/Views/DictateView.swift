@@ -135,6 +135,7 @@ struct StateBanner: View {
                 .background(color, in: RoundedRectangle(cornerRadius: 12))
             Text(flow.hint).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
+        .sensoryFeedback(.impact, trigger: flow.state)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("State \(flow.state.title). \(flow.hint)")
     }
