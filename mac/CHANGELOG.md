@@ -3,7 +3,10 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: `docs/versioning.md`. The repository has one
 version line; entries here are the daemon's part of each release.
 
-## [0.2.0] - 2026-10-20
+## [0.2.1] - 2026-10-20
+
+The daemon's first release on the 0.2 line (the phone branch tagged `v0.2.0` for the app; the rule keeps patch free, so the
+two are compatible). Breaking from 0.1.x.
 
 ### Breaking
 - Authorization is by tailnet identity: requests are accepted from this Mac, and from devices of the same tailnet user as

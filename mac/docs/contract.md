@@ -16,7 +16,7 @@ MAJOR from 1.0.0 on. Each side also declares the oldest peer it works with: the 
 file `mac/min-client-version`; the app declares `GREENFIELD_MIN_PEER_VERSION`. A peer older than that is incompatible
 even if the rule alone would accept it.
 
-0.2.0 is a breaking change from 0.1.x: authorization moved from a per-Mac key to tailnet identity, and `POST /text`
+The 0.2 line is a breaking change from 0.1.x: authorization moved from a per-Mac key to tailnet identity, and `POST /text`
 answers now carry `delivery` and can be 502.
 
 ## Fields
