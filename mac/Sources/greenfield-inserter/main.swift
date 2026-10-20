@@ -65,6 +65,7 @@ case "serve":
     logger.log("starting \(RequestHandler.serviceName) \(RequestHandler.version) name=\(nameOverride ?? macName.current())")
     logger.log("authorization: loopback, same tailnet user\(keys.isConfigured ? ", or the optional key" : "") (no key needed)")
     if !MacSystemProbe().accessibilityTrusted { logger.log("Accessibility not granted; run `greenfield-inserter permissions`") }
+    MacSystemProbe.restartWhenAccessibilityIsGranted { logger.log($0) }
     server = HTTPServer(target: target, port: port, handler: handler, logger: logger)
     server.run()
 

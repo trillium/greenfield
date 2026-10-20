@@ -2,6 +2,7 @@
   "_comment" : "Recorded from the real handler by ContractTests (RECORD_FIXTURES=1). HTTP status 200. The phone's tests parse this file.",
   "_http_status" : 200,
   "accessibility" : true,
+  "accessibility_at_start" : true,
   "app_compatible" : {
     "fix" : "",
     "message" : "the newest app seen (0.2.0, 2 minutes ago) is compatible with daemon 0.2.0",

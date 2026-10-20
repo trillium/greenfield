@@ -241,6 +241,16 @@ final class HealthTests: XCTestCase {
         XCTAssertEqual(checks(.ok(old)).last?.status, .skip)
     }
 
+    func testGrantAfterStartNeedsARestart() {
+        var late = snap(); late.accessibilityAtStart = false
+        let c = checks(.ok(late)).first { $0.id == "accessibility" }!
+        XCTAssertEqual(c.status, .fail)
+        XCTAssertTrue(c.detail.contains("after the daemon started")); XCTAssertTrue(c.fix.contains("restart"))
+        var fine = snap(); fine.accessibilityAtStart = true
+        XCTAssertEqual(checks(.ok(fine)).first { $0.id == "accessibility" }?.status, .pass)
+        XCTAssertEqual(checks(.ok(snap())).first { $0.id == "accessibility" }?.status, .pass)      // older daemons: not reported
+    }
+
     func testKeyNoteOnlyWhenAKeyMattersOrFails() {
         XCTAssertFalse(formatHealth(label: "m", checks: checks(.ok(snap(key: false)))).contains("note:"))
         XCTAssertTrue(formatHealth(label: "m", checks: checks(.ok(snap(key: true)))).contains("note:"))

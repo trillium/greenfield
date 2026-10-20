@@ -3,6 +3,13 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: `docs/versioning.md`. The repository has one
 version line; entries here are the daemon's part of each release.
 
+## [0.2.2] - 2026-10-20
+
+### Fixed
+- An Accessibility grant that arrives while the daemon is running was not usable until the daemon was relaunched, so pastes
+  were dropped although `health` said "granted". Under launchd the daemon now exits when it sees the grant and `KeepAlive`
+  restarts it; `health` also flags a grant that arrived after start ("restart needed") with the `restart` command.
+
 ## [0.2.1] - 2026-10-20
 
 The daemon's first release on the 0.2 line (the phone branch tagged `v0.2.0` for the app; the rule keeps patch free, so the

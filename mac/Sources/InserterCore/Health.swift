@@ -50,6 +50,8 @@ public struct DaemonSnapshot: Equatable {
     /// The running build: short commit and a hash of the executable file it was started from.
     public var build: BuildIdentity?
     public var uptime: Int?
+    /// nil for daemons that do not report it.
+    public var accessibilityAtStart: Bool?
 
     public static func parse(_ body: Data) -> DaemonSnapshot? {
         guard let o = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
@@ -64,7 +66,7 @@ public struct DaemonSnapshot: Equatable {
             auth: o["auth"] as? String, identityOK: o["identity_ok"] as? Bool, tailnetUser: o["tailnet_user"] as? String,
             canInsert: CanInsert.parse(o["evidence"]), minClientVersion: o["min_client_version"] as? String,
             appCompatible: AppCompat.parse(o["app_compatible"]), build: BuildIdentity.parse(o["build"]),
-            uptime: o["uptime_s"] as? Int)
+            uptime: o["uptime_s"] as? Int, accessibilityAtStart: o["accessibility_at_start"] as? Bool)
     }
 }
 
@@ -229,11 +231,16 @@ private func okChecks(_ s: DaemonSnapshot, subject: HealthSubject, remote: Bool,
         out.append(HealthCheck("auth", titleFor("auth"), .pass,
             detail: user + "; key " + (s.keyConfigured ? "set (optional extra)" : "not set (not needed)")))
     }
-    out.append(s.accessibility
+    if s.accessibility, s.accessibilityAtStart == false {
+        out.append(HealthCheck("accessibility", titleFor("accessibility"), .fail,
+            detail: "granted after the daemon started; this process cannot use it yet",
+            why: "macOS only lets a process use an Accessibility grant that arrived after it started once it is relaunched, so pastes are dropped until then.",
+            fix: "\(onThatMac): `\(bin) restart` (under launchd the daemon normally restarts itself within seconds of the grant)."))
+    } else { out.append(s.accessibility
         ? HealthCheck("accessibility", titleFor("accessibility"), .pass, detail: "granted")
         : HealthCheck("accessibility", titleFor("accessibility"), .fail, detail: "not granted to the running daemon",
             why: "macOS silently drops the paste and key events of a program without Accessibility, so nothing would be inserted (the daemon answers 503).",
-            fix: "\(onThatMac): run `\(bin) permissions`, press \"Open System Settings\" in the prompt, and switch on greenfield-inserter under Privacy & Security > Accessibility (add `\(bin)` with + if it is not listed). The grant belongs to the signed identity, so it survives updates signed with the same certificate; an ad-hoc build needs it again."))
+            fix: "\(onThatMac): run `\(bin) permissions`, press \"Open System Settings\" in the prompt, and switch on greenfield-inserter under Privacy & Security > Accessibility (add `\(bin)` with + if it is not listed). The grant belongs to the signed identity, so it survives updates signed with the same certificate; an ad-hoc build needs it again.")) }
     out.append(!s.screenLocked
         ? HealthCheck("unlocked", titleFor("unlocked"), .pass, detail: "unlocked")
         : HealthCheck("unlocked", titleFor("unlocked"), .fail, detail: "the screen is locked",

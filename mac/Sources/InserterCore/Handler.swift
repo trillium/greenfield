@@ -22,6 +22,12 @@ public protocol SystemProbe {
     var secureInputEnabled: Bool { get }
     var screenLocked: Bool { get }
     var accessibilityTrusted: Bool { get }
+    /// Was Accessibility already granted when this process started?
+    var accessibilityAtStart: Bool { get }
+}
+
+public extension SystemProbe {
+    var accessibilityAtStart: Bool { accessibilityTrusted }
 }
 
 public protocol RequestLogger {
@@ -194,6 +200,7 @@ public final class RequestHandler {
             "secure_input": probe.secureInputEnabled,
             "screen_locked": probe.screenLocked,
             "accessibility": probe.accessibilityTrusted,
+            "accessibility_at_start": probe.accessibilityAtStart,
             "inserted_count": count,
             "listen": listening(),
             "auth": "tailnet",
