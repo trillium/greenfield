@@ -53,13 +53,21 @@ struct SoundRule: Codable, Equatable, Identifiable, Sendable {
 
     var summary: String { "\(trigger.summary): \(from.title) → \(to.title)" }
 
-    /// The shipped defaults: kitty-cmere twice starts dictation, a tongue click ends it and writes the text, another submits it.
+    /// The shipped defaults: kitty-cmere twice starts dictation (from idle, or again from review to add more text, which is
+    /// appended to the end of the box), a tongue click ends dictation and writes the text, another tongue click submits it.
     static let defaults: [SoundRule] = [
         SoundRule(trigger: SoundTrigger(sound: "kitty-cmere", count: 2, withinSeconds: 1.5), from: .idle, to: .dictating,
+                  action: .startDictation),
+        SoundRule(trigger: SoundTrigger(sound: "kitty-cmere", count: 2, withinSeconds: 1.5), from: .review, to: .dictating,
                   action: .startDictation),
         SoundRule(trigger: SoundTrigger(sound: "tongue-click"), from: .dictating, to: .review, action: .endDictation),
         SoundRule(trigger: SoundTrigger(sound: "tongue-click"), from: .review, to: .idle, action: .submit)
     ]
+
+    /// The first shipped default list, which had no review-state kitty-cmere rule. Saved copies of it are upgraded to the current one.
+    static var firstDefaults: [SoundRule] {
+        [defaults[0], defaults[2], defaults[3]]
+    }
 }
 
 /// The rules plus the state they act on. Pure: feed it sounds, it says which rule fired.
@@ -115,7 +123,9 @@ struct RuleStore {
         guard let data = defaults.data(forKey: Self.key), let rules = try? JSONDecoder().decode([SoundRule].self, from: data) else {
             return SoundRule.defaults
         }
-        return rules
+        // A saved copy of the first defaults was never edited by the person (ids aside); give it the current defaults.
+        let shape = { (list: [SoundRule]) in list.map { [$0.trigger.summary, $0.from.rawValue, $0.to.rawValue, $0.action.rawValue] } }
+        return shape(rules) == shape(SoundRule.firstDefaults) ? SoundRule.defaults : rules
     }
 
     func save(_ rules: [SoundRule]) {

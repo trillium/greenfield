@@ -26,8 +26,14 @@ final class AppModel {
     static func live() -> AppModel {
         let targets = TargetStore(keys: KeychainKeyStore())
         targets.seedPresets(Bundle.main.object(forInfoDictionaryKey: "GreenfieldPresetComputers") as? String)
-        return AppModel(session: DictationSession(transcriber: ParakeetTranscriber()), outbox: Outbox(url: Outbox.standardURL),
-                        targets: targets)
+        // `-selftest-fakemic YES`: treat the microphone as running and feed the bus from files (the acceptance scenarios on a phone
+        // nobody is speaking to). The detector, rules, buffer, speech model and delivery are all the real ones.
+        var machine = ListenMachine()
+        let fake = UserDefaults.standard.bool(forKey: "selftest-fakemic")
+        if fake { _ = machine.handle(.started) }
+        let session = DictationSession(transcriber: ParakeetTranscriber(), listen: machine)
+        if fake { session.attach() }
+        return AppModel(session: session, outbox: Outbox(url: Outbox.standardURL), targets: targets)
     }
 
     func resend(_ id: UUID) {

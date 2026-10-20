@@ -19,6 +19,24 @@ final class SoundRulesTests: XCTestCase {
         XCTAssertNotNil(engine.hear("kitty-cmere", at: 3.8), "but the 3.0 and 3.8 pair is inside it")
     }
 
+    func testKittyTwiceFromReviewRestartsDictation() {
+        var engine = RuleEngine(state: .review)
+        XCTAssertNil(engine.hear("kitty-cmere", at: 1.0))
+        XCTAssertEqual(engine.hear("kitty-cmere", at: 1.4)?.action, .startDictation)
+        XCTAssertEqual(engine.state, .dictating)
+    }
+
+    func testAnOldSavedDefaultListIsUpgradedButAnEditedOneIsKept() {
+        let defaults = UserDefaults(suiteName: "rules.\(UUID().uuidString)")!
+        let store = RuleStore(defaults: defaults)
+        store.save(SoundRule.firstDefaults)
+        XCTAssertEqual(store.load(), SoundRule.defaults, "never edited: gets the review-state rule")
+        var edited = SoundRule.firstDefaults
+        edited[0].trigger.count = 3
+        store.save(edited)
+        XCTAssertEqual(store.load(), edited, "edited lists are left alone")
+    }
+
     func testTheDefaultFlowEndToEnd() {
         var engine = RuleEngine()
         _ = engine.hear("kitty-cmere", at: 1.0)
@@ -47,7 +65,7 @@ final class SoundRulesTests: XCTestCase {
 
     func testDisabledRulesNeverFire() {
         var rules = SoundRule.defaults
-        rules[1].enabled = false
+        rules[2].enabled = false
         var engine = RuleEngine(rules: rules, state: .dictating)
         XCTAssertNil(engine.hear("tongue-click", at: 1.0))
         XCTAssertEqual(engine.state, .dictating)
@@ -194,6 +212,71 @@ final class EndToEndFlowTests: XCTestCase {
         XCTAssertEqual(outbox.items.first?.text, "Hello from the test.")
         for _ in 0..<100 where outbox.items.first?.status != .sent { try await Task.sleep(for: .milliseconds(20)) }
         XCTAssertEqual(outbox.items.first?.status, .sent)
+    }
+
+    /// The captain's four scenarios, in order, with the real session, buffer, rules and delivery.
+    func testTheFourAcceptanceScenarios() async throws {
+        StubURLProtocol.install { _ in (200, json(["ok": true, "status": "inserted", "duplicate": false])) }
+        let rig = try await rig(withMac: true)
+        let (flow, session, outbox) = (rig.flow, rig.session, rig.outbox)
+        let bus = session.capture.bus
+        let alwaysOn = { bus.subscriberCount }
+        let listening = alwaysOn()
+
+        // 1. Ready to record, kitty-cmere twice quickly: recording turns on.
+        XCTAssertEqual(flow.state, .idle)
+        bus.publish(tone(1))
+        flow.heard([event("kitty-cmere", 1.0), event("kitty-cmere", 1.25)])
+        XCTAssertTrue(session.isHolding, "scenario 1: recording is on")
+        XCTAssertEqual(flow.state, .dictating)
+
+        // 2. Dictation mode, one tongue click: dictation ends and the content is written into the box.
+        bus.publish(tone(2))
+        flow.heard([event("tongue-click", 3.5)])
+        XCTAssertFalse(session.isHolding, "scenario 2: recording is off")
+        XCTAssertEqual(flow.state, .review)
+        for _ in 0..<100 where flow.text.isEmpty { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(flow.text, "Hello from the test.", "scenario 2: the content is in the box")
+
+        // 3. Content still in the box, kitty-cmere twice again: dictation restarts, new text goes on the END, old text kept.
+        bus.publish(tone(1))
+        flow.heard([event("kitty-cmere", 6.0), event("kitty-cmere", 6.3)])
+        XCTAssertTrue(session.isHolding, "scenario 3: recording restarts")
+        XCTAssertEqual(flow.state, .dictating)
+        XCTAssertEqual(flow.text, "Hello from the test.", "the existing text is untouched while dictating")
+        bus.publish(tone(2))
+        flow.heard([event("tongue-click", 8.5)])
+        for _ in 0..<100 where flow.text == "Hello from the test." { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(flow.text, "Hello from the test. Hello from the test.", "scenario 3: appended at the end")
+
+        // 4. Content in the box, not dictating, one tongue click: it is submitted.
+        XCTAssertEqual(flow.state, .review)
+        flow.heard([event("tongue-click", 11.0)])
+        XCTAssertEqual(flow.state, .idle)
+        XCTAssertEqual(flow.text, "")
+        XCTAssertEqual(outbox.items.first?.text, "Hello from the test. Hello from the test.", "scenario 4: submitted")
+        for _ in 0..<100 where outbox.items.first?.status != .sent { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(outbox.items.first?.status, .sent)
+        XCTAssertEqual(alwaysOn(), listening, "the microphone feed to the listeners never changed")
+    }
+
+    func testTheDetectorListenerStaysSubscribedInEveryState() async throws {
+        let rig = try await rig(withMac: false)
+        let (flow, session) = (rig.flow, rig.session)
+        let bus = session.capture.bus
+        let model = try ParrotModelStore.bundledModel()
+        let listener = SoundListener(detector: try SoundDetector(model: model), bus: bus) { _ in }
+        let count = bus.subscriberCount
+        XCTAssertGreaterThanOrEqual(count, 2, "the utterance buffer and the detector share the one bus")
+        for state in FlowState.allCases {
+            if state == .dictating { session.beginHold() } else { session.endHold() }
+            bus.publish(tone(0.3))
+            XCTAssertEqual(bus.subscriberCount, count, "still listening while \(state.title)")
+        }
+        flow.text = "something in the box"
+        bus.publish(tone(0.3))
+        XCTAssertEqual(bus.subscriberCount, count, "still listening with text in the box")
+        listener.cancel()
     }
 
     func testWithoutAMacTheSubmitQueuesInTheOutbox() async throws {

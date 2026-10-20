@@ -6,15 +6,19 @@ import Foundation
 /// `-selftest-key <key>`, `-selftest-play YES` (play the clip through the speaker and let the microphone hear it, instead of
 /// feeding the audio in directly), `-selftest-exit YES`. Result lines start with `SELFTEST` on the console.
 @MainActor
-struct SelfTest {
+final class SelfTest {
     let model: AppModel
     let defaults = UserDefaults.standard
+
+    init(model: AppModel) { self.model = model }
 
     static func runIfRequested(_ model: AppModel) async {
         let test = SelfTest(model: model)
         test.removeSelfTestTargets()
         defer { test.removeSelfTestTargets() }
-        if test.defaults.bool(forKey: "selftest-health") {
+        if test.defaults.bool(forKey: "selftest-scenarios") {
+            await test.runScenarios()
+        } else if test.defaults.bool(forKey: "selftest-health") {
             await test.checkHealth()
         } else if let name = test.defaults.string(forKey: "selftest-sounds") {
             await test.runSounds(wav: name)
@@ -52,6 +56,85 @@ struct SelfTest {
             say("t=\(time) \(event.pattern) \(event.topClass) p=\(probability)\(fired)")
         }
         say("final state \(model.flow.state.title)")
+    }
+
+    // MARK: Acceptance scenarios
+
+    private var passed = 0
+    private var failed = 0
+
+    private func check(_ name: String, _ ok: Bool, _ detail: String = "") {
+        if ok { passed += 1 } else { failed += 1 }
+        say("\(ok ? "PASS" : "FAIL") \(name)\(detail.isEmpty ? "" : " (\(detail))")")
+    }
+
+    private func feed(_ samples: [Float]) async {
+        let bus = model.session.capture.bus
+        var index = 0
+        while index < samples.count {
+            let end = min(index + 4096, samples.count)
+            bus.publish(Array(samples[index..<end]))
+            index = end
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    private func wait(_ seconds: Double, until condition: () -> Bool) async {
+        let deadline = Date().addingTimeInterval(seconds)
+        while !condition(), Date() < deadline { try? await Task.sleep(for: .milliseconds(100)) }
+    }
+
+    /// The four acceptance scenarios through the real detector on audio made from the fixture clip (kitty-cmere pair, tongue click)
+    /// and two spoken phrases. Needs `-selftest-fakemic YES`, Documents/session_clip.wav, selftest.wav and selftest2.wav.
+    private func runScenarios() async {
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        guard let clip = try? Self.load(documents.appendingPathComponent("session_clip.wav")),
+              let first = try? Self.load(documents.appendingPathComponent("selftest.wav")),
+              let second = try? Self.load(documents.appendingPathComponent("selftest2.wav")), !clip.isEmpty else {
+            return say("cannot read the clips in Documents")
+        }
+        configureTarget()
+        guard await waitForModel() else { return }
+        for _ in 0..<40 where model.flow.modelName.isEmpty { try? await Task.sleep(for: .milliseconds(250)) }
+        let rate = 16_000
+        let kittyPair = Array(clip[Int(9.8 * Double(rate))..<Int(10.4 * Double(rate))])
+        let click = Array(clip[Int(0.1 * Double(rate))..<Int(0.4 * Double(rate))])
+        let quiet = { (seconds: Double) in [Float](repeating: 0, count: Int(seconds * Double(rate))) }
+        let flow = model.flow, session = model.session, bus = session.capture.bus
+        let listeners = bus.subscriberCount
+        say("detector \(flow.modelName); listeners on the one tap: \(listeners); mic ready: \(session.micReady)")
+        check("start: idle, ready to record", flow.state == .idle && session.isModelReady && session.micReady)
+
+        await feed(quiet(1)); await feed(kittyPair); await feed(quiet(0.5))
+        check("1 kitty-cmere twice -> recording on", session.isHolding && flow.state == .dictating,
+              "state \(flow.state.title), recording \(session.isHolding)")
+        check("listener on while dictating", bus.subscriberCount == listeners)
+
+        await feed(quiet(0.5)); await feed(first); await feed(quiet(0.3)); await feed(click); await feed(quiet(1.2))
+        await wait(20) { !flow.text.isEmpty }
+        check("2 tongue click -> dictation ended, text in the box", !session.isHolding && flow.state == .review && !flow.text.isEmpty,
+              "state \(flow.state.title), text '\(flow.text)'")
+        let before = flow.text
+        check("listener on with text in the box", bus.subscriberCount == listeners)
+
+        await feed(quiet(1)); await feed(kittyPair); await feed(quiet(0.5))
+        check("3a kitty-cmere twice again -> recording restarts, old text kept", session.isHolding && flow.text == before,
+              "state \(flow.state.title), recording \(session.isHolding), text '\(flow.text)'")
+        await feed(quiet(0.5)); await feed(second); await feed(quiet(0.3)); await feed(click); await feed(quiet(1.2))
+        await wait(20) { flow.text != before }
+        check("3b new text appended at the END", flow.text.hasPrefix(before) && flow.text.count > before.count,
+              "text '\(flow.text)'")
+
+        let combined = flow.text
+        let count = model.outbox.items.count
+        await feed(quiet(1)); await feed(click); await feed(quiet(0.8))
+        await wait(5) { model.outbox.items.count > count }
+        check("4 tongue click -> submitted", flow.state == .idle && flow.text.isEmpty && model.outbox.items.first?.text == combined,
+              "state \(flow.state.title), outbox '\(model.outbox.items.first?.text ?? "none")'")
+        await wait(8) { model.outbox.items.first?.status == .sent }
+        say("delivery: \(model.outbox.items.first?.status.rawValue ?? "none") \(model.outbox.items.first?.lastError ?? "")")
+        check("listener on throughout", bus.subscriberCount == listeners)
+        say("scenarios: \(passed) passed, \(failed) failed")
     }
 
     /// Asks every listed computer for its status with a throwaway key (set only where none is saved, then removed), so the real agents'
