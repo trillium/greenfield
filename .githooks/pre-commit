@@ -1,0 +1,37 @@
+#!/usr/bin/env sh
+# Rung: hook. Mirrors Canon's pre-commit for a Swift app.
+set -e
+root="$(git rev-parse --show-toplevel)"
+STAGED=$(git diff --cached --name-only --diff-filter=ACM)
+
+# 1. Signing material / credentials never enter git.
+"$root/scripts/check-secrets.sh" --staged
+
+# 2. Generated and build output stays out.
+for pat in '\.xcodeproj/' '\.xcarchive' '\.ipa$'; do
+  echo "$STAGED" | grep -qE "$pat" && { echo "error: generated/build artifact staged ($pat); project.yml is the source of truth"; exit 1; }
+done
+
+# 3. Wrong-ecosystem lockfiles.
+for f in package-lock.json yarn.lock pnpm-lock.yaml bun.lockb; do
+  echo "$STAGED" | grep -qx "$f" && { echo "error: $f staged; this is a Swift project"; exit 1; }
+done
+
+# 4. SwiftLint on staged Swift files.
+SWIFT=$(echo "$STAGED" | grep '\.swift$' || true)
+if [ -n "$SWIFT" ]; then
+  if command -v swiftlint >/dev/null 2>&1; then echo "$SWIFT" | xargs swiftlint lint --strict --quiet
+  else echo "warning: swiftlint not installed; skipping (make check will require it)"; fi
+fi
+
+# 5. Large file warning (250 lines), Canon's threshold.
+for file in $STAGED; do
+  case "$file" in *.md|*.json|*.yml|*.yaml|*.plist|*.xcconfig) continue ;; esac
+  [ -f "$file" ] || continue
+  n=$(wc -l < "$file" | tr -d ' ')
+  [ "$n" -le 250 ] || echo "warning: $file has $n lines (limit 250); consider decomposing"
+done
+
+# 6. gitleaks as a second opinion.
+if command -v gitleaks >/dev/null 2>&1; then gitleaks protect --staged --no-banner || exit 1
+else echo "warning: gitleaks not installed; skipping second-opinion scan"; fi

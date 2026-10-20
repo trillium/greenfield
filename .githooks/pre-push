@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+# Nothing leaves the machine unless the gate is green.
+exec make check

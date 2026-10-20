@@ -1,0 +1,16 @@
+// Single source of truth for per-app identity and version. Scripts and Xcode both read this file.
+// The name, display name and bundle id are working values (not decided); each is a one-line change here.
+// Override locally (never committed) in Config/Local.xcconfig -- see Local.xcconfig.example.
+// Set DEVELOPMENT_TEAM in Config/Local.xcconfig (gitignored). Keys live outside git (docs/signing.md).
+
+APP_NAME = DictationApp
+DISPLAY_NAME = Dictation (working name)
+PRODUCT_BUNDLE_IDENTIFIER = com.trillium.dictationapp.dev
+
+// Version is derived from git tags, never hand-edited (docs/versioning.md). These are only fallbacks for a
+// checkout with no git history; `make generate` writes Config/Version.xcconfig (gitignored), which overrides them.
+MARKETING_VERSION = 0.0.0
+CURRENT_PROJECT_VERSION = 1
+#include? "Version.xcconfig"
+
+#include? "Local.xcconfig"
