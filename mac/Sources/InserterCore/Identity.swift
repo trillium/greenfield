@@ -45,35 +45,43 @@ public func comparePeer(_ peer: WhoisRecord, to me: WhoisRecord) -> PeerIdentity
 public final class TailscaleIdentity: TailnetIdentity {
     private let lock = NSLock()
     private var cache: [String: (until: Date, record: WhoisRecord?, reason: String)] = [:]
-    private let runner: (_ arguments: [String]) -> (status: Int32, output: Data)?
+    private let runner: (_ arguments: [String]) -> (status: Int32, output: Data, error: String)?
     private let ownAddress: () -> String?
     private let now: () -> Date
 
-    public init(runner: ((_ arguments: [String]) -> (status: Int32, output: Data)?)? = nil,
+    public init(runner: ((_ arguments: [String]) -> (status: Int32, output: Data, error: String)?)? = nil,
                 ownAddress: @escaping () -> String? = { Tailnet.ipv4() }, now: @escaping () -> Date = Date.init) {
         self.runner = runner ?? TailscaleIdentity.runCLI
         self.ownAddress = ownAddress
         self.now = now
     }
 
+    /// The command-line wrappers first (they set up the app binary correctly); the app's own binary last.
     public static let cliCandidates = [
-        "/Applications/Tailscale.app/Contents/MacOS/Tailscale", "/opt/homebrew/bin/tailscale",
-        "/usr/local/bin/tailscale", "/usr/bin/tailscale",
+        "/usr/local/bin/tailscale", "/opt/homebrew/bin/tailscale", "/usr/bin/tailscale",
+        "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
     ]
 
-    static func runCLI(_ arguments: [String]) -> (status: Int32, output: Data)? {
+    static func runCLI(_ arguments: [String]) -> (status: Int32, output: Data, error: String)? {
         guard let path = cliCandidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else { return nil }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: path)
         p.arguments = arguments
         let out = Pipe()
         p.standardOutput = out
-        p.standardError = Pipe()
-        do { try p.run() } catch { return nil }
+        let err = Pipe()
+        p.standardError = err
+        do { try p.run() } catch { return (-1, Data(), "could not start \(path): \(error.localizedDescription)") }
+        // Drain both pipes while the child runs so a chatty child cannot block on a full pipe.
+        var outData = Data(), errData = Data()
+        let drained = DispatchGroup()
+        drained.enter(); DispatchQueue.global().async { outData = out.fileHandleForReading.readDataToEndOfFile(); drained.leave() }
+        drained.enter(); DispatchQueue.global().async { errData = err.fileHandleForReading.readDataToEndOfFile(); drained.leave() }
         let done = DispatchSemaphore(value: 0)
         DispatchQueue.global().async { p.waitUntilExit(); done.signal() }
-        if done.wait(timeout: .now() + 4) == .timedOut { p.terminate(); return nil }
-        return (p.terminationStatus, out.fileHandleForReading.readDataToEndOfFile())
+        if done.wait(timeout: .now() + 4) == .timedOut { p.terminate(); return (-1, Data(), "\(path) did not answer within 4 seconds") }
+        drained.wait()
+        return (p.terminationStatus, outData, String(data: errData, encoding: .utf8) ?? "")
     }
 
     private func whois(_ address: String) -> (WhoisRecord?, String) {
@@ -84,7 +92,10 @@ public final class TailscaleIdentity: TailnetIdentity {
         var reason = ""
         if let r = runner(["whois", "--json", address]) {
             if r.status == 0, let parsed = WhoisRecord.parse(r.output) { record = parsed }
-            else { reason = "tailscale could not identify \(address)" }
+            else {
+                let detail = r.error.trimmingCharacters(in: .whitespacesAndNewlines).prefix(160)
+                reason = "tailscale could not identify \(address) (exit \(r.status)\(detail.isEmpty ? "" : ": " + detail))"
+            }
         } else {
             reason = "the tailscale command-line tool is missing or did not answer"
         }
