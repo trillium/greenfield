@@ -2,8 +2,19 @@
 
 This app's own code is MIT (see `LICENSE`).
 
-## Bundled today
-Nothing. The app links only Apple system frameworks. It ships no third-party code, model weights, or audio.
+## In the app
+| Component | Licence | What it is | Obligation and how it is met |
+|---|---|---|---|
+| FluidAudio 0.17.7 (FluidInference), https://github.com/FluidInference/FluidAudio | Apache-2.0 | Swift package that runs speech models with Core ML (linked into the app) | Keep its LICENSE and NOTICE; shown in About > Attribution. Source unmodified. |
+| NVIDIA Parakeet TDT 0.6B v2, Core ML conversion by FluidInference | CC BY 4.0 | Speech recognition weights, downloaded on first run (not bundled, not in git) | Credit NVIDIA, link the licence and the source, state the Core ML conversion. See `docs/attribution.md`; shown in About > Attribution. |
+
+The app links Apple system frameworks as well.
+
+## In the benchmark app only (`Spike/`, not part of the dictation app)
+| Component | Licence | Use |
+|---|---|---|
+| WhisperKit 1.1.1 (argmax-oss-swift) and the Whisper Core ML models it downloads | MIT | Comparison against Parakeet |
+| MoonshineVoice 0.1.5 (moonshine-swift) and the Moonshine models it downloads | MIT | Comparison against Parakeet |
 
 ## Build and test tooling (not shipped in the app)
 | Tool | License | Use |
@@ -11,11 +22,3 @@ Nothing. The app links only Apple system frameworks. It ships no third-party cod
 | XcodeGen | MIT | Generates the Xcode project from `project.yml` |
 | SwiftLint | MIT | `make lint` |
 | ShellCheck | GPL-3.0 | `make shell`; run as a separate tool, not linked or distributed |
-
-## Planned (not yet included)
-On-device speech recognition on top of `App/Sources/Audio` is expected to add these dependencies. Their notices must be added here before they ship:
-
-| Component | License | Obligation |
-|---|---|---|
-| NVIDIA Parakeet TDT model weights | CC-BY-4.0 | Attribution to NVIDIA, link to the license, state changes (e.g. CoreML conversion). Weights are downloaded at runtime or bundled, never committed. |
-| FluidAudio (Swift package) | Apache-2.0 | Keep its LICENSE and NOTICE; mark modified files. |

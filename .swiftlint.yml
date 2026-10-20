@@ -1,6 +1,8 @@
 included:
   - App
+  - Spike
 excluded:
+  - Spike/Audio
   - build
   - DerivedData
 disabled_rules:

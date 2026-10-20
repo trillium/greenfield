@@ -1,17 +1,20 @@
 import SwiftUI
 
 struct ContentView: View {
+    let model: AppModel
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "waveform")
-                .font(.system(size: 44))
-                .foregroundStyle(.tint)
-            Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Dictation")
-                .font(.title2.bold())
-            Text(BuildInfo().display)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+        TabView {
+            DictateView(model: model).tabItem { Label("Dictate", systemImage: "mic.fill") }
+            OutboxView(model: model).tabItem { Label("Outbox", systemImage: "tray.full") }
+                .badge(model.outbox.pending.count)
+            TargetsView(model: model).tabItem { Label("Macs", systemImage: "desktopcomputer") }
+            AboutView().tabItem { Label("About", systemImage: "info.circle") }
         }
-        .padding()
+        .task { await model.session.prepareModel() }
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            Task { await model.session.sceneChanged(foreground: phase == .active) }
+        }
     }
 }

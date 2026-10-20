@@ -1,0 +1,100 @@
+import Foundation
+
+/// Keeps the most recent microphone audio and cuts one utterance out of it between a press and a release.
+/// The microphone runs all the time while the screen is open, so the half second before the finger lands is already here: a
+/// speaker who starts talking as they press does not lose their first word. Value type; the owner serialises access.
+struct UtteranceBuffer {
+    struct Config: Equatable {
+        /// Audio kept from before the press.
+        var preRollSeconds = 0.4
+        /// Audio kept after the release, for a word still ending when the finger lifts (the microphone is still running).
+        var tailSeconds = 0.15
+        /// A hold longer than this is cut off.
+        var maxHoldSeconds = 120.0
+        /// Quieter than this over the whole hold counts as silence, not speech.
+        var silenceDb: Float = -55
+    }
+
+    struct Utterance: Equatable {
+        var pcm: [Float]
+        var seconds: Double { Double(pcm.count) / AudioCapture.sampleRate }
+        /// Peak 10 ms frame level in dBFS.
+        var peakDb: Float
+    }
+
+    let config: Config
+    private var samples: [Float] = []
+    /// Stream index of `samples[0]`.
+    private var firstIndex = 0
+    private var holdStart: Int?
+    private var holdEnd: Int?
+
+    init(config: Config = Config()) { self.config = config }
+
+    /// True between `beginHold()` and the end of the tail after `endHold()`.
+    var isHolding: Bool { holdStart != nil && holdEnd == nil }
+    var hasPendingTail: Bool { holdStart != nil && holdEnd != nil }
+
+    private var streamEnd: Int { firstIndex + samples.count }
+    private static func count(_ seconds: Double) -> Int { Int((seconds * AudioCapture.sampleRate).rounded()) }
+
+    mutating func append(_ chunk: [Float]) {
+        samples += chunk
+        if let start = holdStart, holdEnd == nil, streamEnd - start > Self.count(config.maxHoldSeconds) {
+            holdEnd = start + Self.count(config.maxHoldSeconds)
+        }
+        trim()
+    }
+
+    mutating func beginHold() {
+        holdStart = max(streamEnd - Self.count(config.preRollSeconds), firstIndex)
+        holdEnd = nil
+    }
+
+    /// Marks the release. The utterance is complete `tailSeconds` of audio later (`takeFinished`), or at once with `flush: true`.
+    mutating func endHold() {
+        guard holdStart != nil, holdEnd == nil else { return }
+        holdEnd = streamEnd + Self.count(config.tailSeconds)
+    }
+
+    /// The utterance once the tail has arrived (nil before that, or when nothing was held). Resets the hold.
+    mutating func takeFinished(flush: Bool = false) -> Utterance? {
+        guard let start = holdStart, let end = holdEnd else { return nil }
+        guard flush || streamEnd >= end else { return nil }
+        let stop = min(end, streamEnd)
+        defer { holdStart = nil; holdEnd = nil; trim() }
+        guard stop > start else { return nil }
+        let pcm = Array(samples[(start - firstIndex)..<(stop - firstIndex)])
+        return Utterance(pcm: pcm, peakDb: Self.peakDb(pcm))
+    }
+
+    /// True when the utterance is too quiet to contain speech.
+    func isSilent(_ utterance: Utterance) -> Bool { utterance.peakDb < config.silenceDb }
+
+    /// Drops everything: a microphone loss must not splice audio from before and after.
+    mutating func reset() {
+        samples = []
+        firstIndex = 0
+        holdStart = nil
+        holdEnd = nil
+    }
+
+    private mutating func trim() {
+        let keepFrom = holdStart ?? (streamEnd - Self.count(config.preRollSeconds))
+        let drop = min(keepFrom - firstIndex, samples.count)
+        guard drop > 0 else { return }
+        samples.removeFirst(drop)
+        firstIndex += drop
+    }
+
+    static func peakDb(_ pcm: [Float]) -> Float {
+        var peak: Float = -100
+        var index = 0
+        while index < pcm.count {
+            let end = min(index + Endpointer.frameSamples, pcm.count)
+            peak = max(peak, Endpointer.decibels(pcm[index..<end]))
+            index = end
+        }
+        return peak
+    }
+}

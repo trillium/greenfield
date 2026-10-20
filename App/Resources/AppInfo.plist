@@ -4,6 +4,8 @@
 <dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>The microphone is used to turn what you say into text. Audio is transcribed on this phone and never leaves it; only the resulting text is sent, to the Mac you choose.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Used to send the text you dictate to a Mac on your network.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

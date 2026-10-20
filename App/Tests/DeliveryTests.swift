@@ -1,0 +1,209 @@
+import XCTest
+@testable import DictationApp
+
+final class MacTargetTests: XCTestCase {
+    func testABareHostGetsTheDefaultPort() {
+        let name = "macbook.example.ts.net"
+        XCTAssertEqual(MacTarget(name: "a", address: name).baseURL?.absoluteString, "http://\(name):7788")
+        XCTAssertEqual(MacTarget(name: "a", address: "100.64.1.2").baseURL?.absoluteString, "http://100.64.1.2:7788")
+    }
+
+    func testAnExplicitPortIsKept() {
+        XCTAssertEqual(MacTarget(name: "a", address: " mac.ts.net:9000 ").baseURL?.absoluteString, "http://mac.ts.net:9000")
+    }
+
+    func testMalformedAddressesAreRejected() {
+        for bad in ["", " ", "a b", "http://mac", "mac/path", "mac:abc", "mac:0", "mac:70000", ":7788", "a:1:2"] {
+            XCTAssertNil(MacTarget(name: "a", address: bad).baseURL, bad)
+        }
+    }
+
+    func testValidityNeedsANameAndAnAddress() {
+        XCTAssertTrue(MacTarget(name: "Mac", address: "mac.ts.net").isValid)
+        XCTAssertFalse(MacTarget(name: " ", address: "mac.ts.net").isValid)
+        XCTAssertFalse(MacTarget(name: "Mac", address: "").isValid)
+    }
+}
+
+final class ReceiverClientTests: XCTestCase {
+    private let base = URL(string: "http://mac.ts.net:7788")!
+    private let id = UUID()
+
+    private func client() -> ReceiverClient { ReceiverClient(session: StubURLProtocol.session()) }
+
+    func testSendPostsTheContractRequest() async throws {
+        StubURLProtocol.install { _ in (200, json(["ok": true, "status": "inserted", "duplicate": false, "ms": 7])) }
+        let (outcome, _) = await client().send(id: id, text: "Hello, world.", to: base, key: "s3cret")
+        XCTAssertEqual(outcome, .delivered(duplicate: false, macMs: 7))
+        let request = try XCTUnwrap(StubURLProtocol.requests.first)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.url?.path, "/text")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Dictation-Key"), "s3cret")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        XCTAssertEqual(bodyJSON(request)["id"] as? String, id.uuidString)
+        XCTAssertEqual(bodyJSON(request)["text"] as? String, "Hello, world.")
+        XCTAssertFalse(request.url?.absoluteString.contains("s3cret") ?? true, "the key never goes in the URL")
+    }
+
+    func testNoKeyHeaderWhenThereIsNoKey() async {
+        StubURLProtocol.install { _ in (200, json(["ok": true])) }
+        _ = await client().send(id: id, text: "x", to: base, key: nil)
+        XCTAssertNil(StubURLProtocol.requests.first?.value(forHTTPHeaderField: "X-Dictation-Key"))
+    }
+
+    func testEveryDocumentedRefusalIsRecognised() {
+        let cases: [Int: (String, ReceiverClient.Refusal)] = [
+            401: ("bad_key", .badKey), 409: ("secure_input", .secureInput), 413: ("too_large", .tooLarge),
+            422: ("invalid_text", .invalidText), 423: ("locked", .locked), 429: ("rate_limited", .rateLimited)
+        ]
+        for (status, (error, refusal)) in cases {
+            XCTAssertEqual(ReceiverClient.interpret(status: status, data: json(["ok": false, "error": error])), .refused(refusal))
+            XCTAssertEqual(ReceiverClient.interpret(status: status, data: Data()), .refused(refusal), "by status alone: \(status)")
+        }
+    }
+
+    func testADuplicateAnswerCountsAsDelivered() {
+        let outcome = ReceiverClient.interpret(status: 200, data: json(["ok": true, "status": "inserted", "duplicate": true]))
+        XCTAssertEqual(outcome, .delivered(duplicate: true, macMs: nil))
+    }
+
+    func testAnAnswerThatIsNotAReceiverIsNotDelivery() {
+        if case .unreachable = ReceiverClient.interpret(status: 200, data: Data("<html>".utf8)) {} else { XCTFail("200 without ok") }
+        if case .unreachable = ReceiverClient.interpret(status: 500, data: Data()) {} else { XCTFail("500") }
+    }
+
+    func testANetworkErrorIsUnreachableAndKeepsTheText() async {
+        StubURLProtocol.install { _ in throw URLError(.timedOut) }
+        let (outcome, _) = await client().send(id: id, text: "x", to: base, key: nil)
+        guard case .unreachable(let message) = outcome else { return XCTFail("\(outcome)") }
+        XCTAssertTrue(message.contains("did not answer"))
+    }
+
+    func testOversizedTextIsRefusedWithoutASend() async {
+        StubURLProtocol.install { _ in (200, json(["ok": true])) }
+        let (outcome, _) = await client().send(id: id, text: String(repeating: "a", count: 5000), to: base, key: nil)
+        XCTAssertEqual(outcome, .refused(.tooLarge))
+        XCTAssertTrue(StubURLProtocol.requests.isEmpty)
+    }
+
+    func testHealthStates() {
+        let ready = json(["ok": true, "contract": "1.3", "name": "MacBook", "locked": false, "secure_input": false])
+        XCTAssertEqual(ReceiverClient.interpretHealth(status: 200, data: ready), .ready(name: "MacBook", locked: false, secureInput: false))
+        XCTAssertEqual(ReceiverClient.interpretHealth(status: 401, data: Data()), .wrongKey)
+        if case .incompatible = ReceiverClient.interpretHealth(status: 200, data: json(["ok": true, "contract": "2.0"])) {} else {
+            XCTFail("a newer major is refused")
+        }
+        if case .unreachable = ReceiverClient.interpretHealth(status: 404, data: Data()) {} else { XCTFail("404") }
+    }
+
+    func testHealthSendsTheKeyHeader() async {
+        StubURLProtocol.install { _ in (200, json(["ok": true, "contract": "1.0"])) }
+        _ = await client().health(of: base, key: "abc")
+        XCTAssertEqual(StubURLProtocol.requests.first?.url?.path, "/status")
+        XCTAssertEqual(StubURLProtocol.requests.first?.value(forHTTPHeaderField: "X-Dictation-Key"), "abc")
+    }
+}
+
+@MainActor
+final class OutboxTests: XCTestCase {
+    func testItemsSurviveARestart() {
+        let url = temporaryFile()
+        let first = Outbox(url: url)
+        let item = first.add(text: "Hello", asrMs: 44)
+        let second = Outbox(url: url)
+        XCTAssertEqual(second.items.map(\.text), ["Hello"])
+        XCTAssertEqual(second.items.first?.id, item.id)
+        XCTAssertEqual(second.items.first?.asrMs, 44)
+    }
+
+    func testSendingAndFailingUpdateTheItem() {
+        let outbox = Outbox(url: nil)
+        let id = outbox.add(text: "x").id
+        outbox.markAttempt(id, targetName: "MacBook")
+        outbox.markFailed(id, reason: "The Mac is locked.")
+        XCTAssertEqual(outbox.item(id)?.status, .pending)
+        XCTAssertEqual(outbox.item(id)?.lastError, "The Mac is locked.")
+        outbox.markSent(id, networkMs: 30, macMs: 5)
+        XCTAssertEqual(outbox.item(id)?.status, .sent)
+        XCTAssertNil(outbox.item(id)?.lastError)
+        XCTAssertEqual(outbox.item(id)?.attempts, 1)
+        XCTAssertEqual(outbox.item(id)?.targetName, "MacBook")
+    }
+
+    func testOnlySentItemsAreEverDropped() {
+        let outbox = Outbox(url: nil)
+        let unsent = outbox.add(text: "keep me").id
+        for index in 0..<(Outbox.keepSent + 5) {
+            let id = outbox.add(text: "sent \(index)").id
+            outbox.markSent(id, networkMs: 1, macMs: nil)
+        }
+        XCTAssertEqual(outbox.items.filter { $0.status == .sent }.count, Outbox.keepSent)
+        XCTAssertNotNil(outbox.item(unsent))
+        outbox.clearSent()
+        XCTAssertEqual(outbox.items.map(\.id), [unsent])
+    }
+
+    func testRemoveDeletesOneItem() {
+        let outbox = Outbox(url: nil)
+        let keep = outbox.add(text: "a").id
+        let drop = outbox.add(text: "b").id
+        outbox.remove(drop)
+        XCTAssertEqual(outbox.items.map(\.id), [keep])
+    }
+}
+
+@MainActor
+final class TargetStoreTests: XCTestCase {
+    func testSaveSelectAndRemove() throws {
+        let keys = MemoryKeyStore()
+        let defaults = isolatedDefaults()
+        let store = TargetStore(defaults: defaults, keys: keys)
+        let first = MacTarget(name: "MacBook", address: "macbook.ts.net")
+        let second = MacTarget(name: "Mini", address: "mini.ts.net")
+        try store.save(first, key: "k1")
+        try store.save(second, key: "k2")
+        XCTAssertEqual(store.selectedID, first.id, "the first Mac added is selected")
+        store.select(second.id)
+        XCTAssertEqual(store.key(for: second), "k2")
+
+        let reloaded = TargetStore(defaults: defaults, keys: keys)
+        XCTAssertEqual(reloaded.targets.map(\.name), ["MacBook", "Mini"])
+        XCTAssertEqual(reloaded.selected?.id, second.id)
+
+        reloaded.remove(second.id)
+        XCTAssertNil(keys.key(for: second.id), "removing a Mac removes its key")
+        XCTAssertEqual(reloaded.selected?.id, first.id)
+    }
+
+    func testKeysNeverReachPreferences() throws {
+        let defaults = isolatedDefaults()
+        let store = TargetStore(defaults: defaults, keys: MemoryKeyStore())
+        try store.save(MacTarget(name: "Mac", address: "mac.ts.net"), key: "TOP-SECRET-KEY")
+        let stored = defaults.dictionaryRepresentation().values.map { "\($0)" }.joined()
+        XCTAssertFalse(stored.contains("TOP-SECRET-KEY"))
+    }
+
+    func testEditingWithoutAKeyKeepsTheSavedKey() throws {
+        let store = TargetStore(defaults: isolatedDefaults(), keys: MemoryKeyStore())
+        var target = MacTarget(name: "Mac", address: "mac.ts.net")
+        try store.save(target, key: "kept")
+        target.name = "Renamed"
+        try store.save(target, key: nil)
+        XCTAssertEqual(store.key(for: target), "kept")
+        XCTAssertEqual(store.targets.first?.name, "Renamed")
+    }
+
+    func testKeychainRoundTrip() throws {
+        let keychain = KeychainKeyStore(service: "dictation.tests.\(UUID().uuidString)")
+        let id = UUID()
+        do { try keychain.setKey("abc123", for: id) } catch let failure as KeychainKeyStore.Failure where failure.status == -34_018 {
+            throw XCTSkip("the simulator test host has no keychain access; this runs on a device")
+        }
+        addTeardownBlock { try? keychain.setKey(nil, for: id) }
+        XCTAssertEqual(keychain.key(for: id), "abc123")
+        try keychain.setKey("def456", for: id)
+        XCTAssertEqual(keychain.key(for: id), "def456")
+        try keychain.setKey(nil, for: id)
+        XCTAssertNil(keychain.key(for: id))
+    }
+}
