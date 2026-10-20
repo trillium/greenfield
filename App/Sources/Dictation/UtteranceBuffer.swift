@@ -46,15 +46,17 @@ struct UtteranceBuffer {
         trim()
     }
 
-    mutating func beginHold() {
-        holdStart = max(streamEnd - Self.count(config.preRollSeconds), firstIndex)
+    /// `preRollSeconds` overrides the configured pre-roll (a sound that starts dictation wants none: it is not part of the speech).
+    mutating func beginHold(preRollSeconds: Double? = nil) {
+        holdStart = max(streamEnd - Self.count(preRollSeconds ?? config.preRollSeconds), firstIndex)
         holdEnd = nil
     }
 
     /// Marks the release. The utterance is complete `tailSeconds` of audio later (`takeFinished`), or at once with `flush: true`.
-    mutating func endHold() {
-        guard holdStart != nil, holdEnd == nil else { return }
-        holdEnd = streamEnd + Self.count(config.tailSeconds)
+    /// A negative `tailSeconds` ends the utterance that much before now, for a sound that ends dictation: the sound itself is cut off.
+    mutating func endHold(tailSeconds: Double? = nil) {
+        guard let start = holdStart, holdEnd == nil else { return }
+        holdEnd = max(streamEnd + Self.count(tailSeconds ?? config.tailSeconds), start)
     }
 
     /// The utterance once the tail has arrived (nil before that, or when nothing was held). Resets the hold.

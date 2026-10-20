@@ -10,6 +10,9 @@ This app's own code is MIT (see `LICENSE`).
 
 The app links Apple system frameworks as well.
 
+## Local build inputs, not committed and not yet cleared for public release
+The sound detector library and the sound model are staged by `make core` from a sibling checkout and are never committed. Their licence and provenance for any public release are open decisions (see `docs/sounds.md`).
+
 ## In the benchmark app only (`Spike/`, not part of the dictation app)
 | Component | Licence | Use |
 |---|---|---|

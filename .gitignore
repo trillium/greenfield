@@ -16,6 +16,9 @@ DerivedData/
 xcuserdata/
 *.xcuserstate
 
+# Staged by `make core`: detector libraries and the personal model
+.parrot-core/
+
 # Machine-local overrides
 Config/Local.xcconfig
 # Generated from git tags by scripts/version.sh

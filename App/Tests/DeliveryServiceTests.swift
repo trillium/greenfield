@@ -13,7 +13,8 @@ final class DeliveryServiceTests: XCTestCase {
         let store = TargetStore(defaults: isolatedDefaults(), keys: MemoryKeyStore())
         for target in targets { try store.save(target, key: "key-\(target.name)") }
         let outbox = Outbox(url: nil)
-        let service = DeliveryService(outbox: outbox, targets: store, client: ReceiverClient(session: StubURLProtocol.session()))
+        let client = ReceiverClient(session: StubURLProtocol.session(), tailnetConnected: { true })
+        let service = DeliveryService(outbox: outbox, targets: store, client: client)
         return Rig(service: service, outbox: outbox, store: store)
     }
 

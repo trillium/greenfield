@@ -26,19 +26,27 @@ final class UtteranceGate: @unchecked Sendable {
         if let finished { handler?(finished, silent) }
     }
 
-    func begin() {
+    func begin(preRollSeconds: Double? = nil) {
         lock.lock()
-        buffer.beginHold()
+        buffer.beginHold(preRollSeconds: preRollSeconds)
         lock.unlock()
     }
 
-    /// Marks the release; the tail arrives through `append`. Returns false when nothing was being held.
+    /// Marks the release; the tail arrives through `append` (or is already here when `tailSeconds` is negative).
+    /// Returns false when nothing was being held.
     @discardableResult
-    func end() -> Bool {
+    func end(tailSeconds: Double? = nil) -> Bool {
         lock.lock()
-        defer { lock.unlock() }
-        guard buffer.isHolding else { return false }
-        buffer.endHold()
+        guard buffer.isHolding else {
+            lock.unlock()
+            return false
+        }
+        buffer.endHold(tailSeconds: tailSeconds)
+        let finished = buffer.takeFinished()
+        let silent = finished.map(buffer.isSilent) ?? false
+        let handler = onUtterance
+        lock.unlock()
+        if let finished { handler?(finished, silent) }
         return true
     }
 
@@ -87,9 +95,13 @@ final class DictationSession {
     private var releaseGuard: Task<Void, Never>?
     /// Called with each non-empty transcript and the speech model's time in milliseconds.
     var onTranscript: (@MainActor (String, Int) -> Void)?
+    /// Called when recording starts (true) or stops (false), whatever started it: the button, a sound, or a lost microphone.
+    var onDictating: (@MainActor (Bool) -> Void)?
 
-    init(capture: AudioCapture = AudioCapture(), transcriber: SpeechTranscriber) {
+    /// `listen` is injectable so a test can start from a microphone that is already running.
+    init(capture: AudioCapture = AudioCapture(), transcriber: SpeechTranscriber, listen: ListenMachine = ListenMachine()) {
         self.capture = capture
+        self.listen = listen
         self.transcriber = transcriber
         gate.setHandler { [weak self] utterance, silent in
             Task { @MainActor in await self?.finish(utterance, silent: silent) }
@@ -131,7 +143,7 @@ final class DictationSession {
             return
         }
         micDenied = false
-        subscription = capture.bus.subscribe { [gate] chunk in gate.append(chunk) }
+        attach()
         do {
             try capture.start(onEvent: { [weak self] event in Task { @MainActor in self?.audioEvent(event) } })
             apply(listen.handle(.started))
@@ -139,6 +151,11 @@ final class DictationSession {
             subscription = nil
             apply(listen.handle(.interruptionBegan(reason: String(describing: error))))
         }
+    }
+
+    /// Subscribes the utterance buffer to the microphone's bus (done by `startListening`; a test calls it to feed the bus directly).
+    func attach() {
+        subscription = capture.bus.subscribe { [gate] chunk in gate.append(chunk) }
     }
 
     func stopListening() {
@@ -199,20 +216,34 @@ final class DictationSession {
         }
     }
 
-    // MARK: Hold to talk
+    // MARK: Dictating (the hold button and the sound rules share this)
 
-    func beginHold() {
+    func beginHold() { beginDictation(preRollSeconds: nil) }
+    func endHold() { endDictation(tailSeconds: nil) }
+
+    /// A sound started dictation: no pre-roll, the sound is not part of the speech.
+    func beginSoundDictation() { beginDictation(preRollSeconds: 0) }
+
+    /// A sound ended dictation: the last moments (the sound itself) are cut off.
+    func endSoundDictation() { endDictation(tailSeconds: -Self.soundTrimSeconds) }
+
+    static let soundTrimSeconds = 0.3
+
+    private func beginDictation(preRollSeconds: Double?) {
         guard canHold else { return }
         notice = .none
         isHolding = true
         releaseGuard?.cancel()
-        gate.begin()
+        gate.begin(preRollSeconds: preRollSeconds)
+        onDictating?(true)
     }
 
-    func endHold() {
+    private func endDictation(tailSeconds: Double?) {
         guard isHolding else { return }
         isHolding = false
-        guard gate.end() else { return }
+        onDictating?(false)
+        guard gate.end(tailSeconds: tailSeconds) else { return }
+        guard tailSeconds == nil else { return }
         // The tail normally arrives with the next audio chunk; if the microphone died there is none, so cut at what we have.
         releaseGuard = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(700))
@@ -222,8 +253,10 @@ final class DictationSession {
     }
 
     private func abortHold() {
+        let wasHolding = isHolding
         isHolding = false
         releaseGuard?.cancel()
+        if wasHolding { onDictating?(false) }
     }
 
     // MARK: Transcription

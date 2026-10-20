@@ -1,28 +1,35 @@
 import SwiftUI
 
-/// The main screen: pick a Mac, hold the button, speak, let go.
+/// The main screen: the state the flow is in, the last sound heard, the text box, and the hold button as the fallback.
 struct DictateView: View {
     let model: AppModel
 
     var body: some View {
         let session = model.session
-        VStack(spacing: 20) {
-            TargetPicker(model: model)
-            Spacer(minLength: 0)
-            statusText(session)
-            HoldButton(enabled: session.canHold, active: session.isHolding, busy: session.transcribing > 0,
-                       press: { session.beginHold() }, release: { session.endHold() })
-            Spacer(minLength: 0)
-            LastTranscript(model: model)
+        let flow = model.flow
+        ScrollView {
+            VStack(spacing: 16) {
+                TargetPicker(model: model)
+                StateBanner(flow: flow)
+                LastSoundLine(sound: flow.lastSound)
+                TextBox(flow: flow)
+                statusText(session)
+                HoldButton(enabled: session.canHold, active: session.isHolding, busy: session.transcribing > 0,
+                           press: { session.beginHold() }, release: { session.endHold() })
+                    .scaleEffect(0.7)
+                    .frame(height: 140)
+                if let item = model.outbox.items.first { QueuedLine(item: item, model: model) }
+            }
+            .padding()
         }
-        .padding()
+        .scrollDismissesKeyboard(.interactively)
         .task { await model.health.refreshAll() }
     }
 
     @ViewBuilder
     private func statusText(_ session: DictationSession) -> some View {
         VStack(spacing: 4) {
-            Text(headline(session)).font(.headline).multilineTextAlignment(.center)
+            Text(headline(session)).font(.subheadline.weight(.semibold)).multilineTextAlignment(.center)
             if let detail = detail(session) {
                 Text(detail).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
@@ -51,7 +58,7 @@ struct DictateView: View {
         case .interrupted: return "The microphone was interrupted"
         case .gaveUp: return "The microphone is unavailable"
         case .off, .backgrounded: return "Starting the microphone…"
-        case .listening: return "Hold the button and speak"
+        case .listening: return "Microphone ready"
         }
     }
 
@@ -61,15 +68,84 @@ struct DictateView: View {
         case .failed(let message): return message
         case .notLoaded, .ready: break
         }
-        if session.micDenied { return "Turn it on in Settings > Dictation > Microphone." }
+        if session.micDenied { return "Turn it on in Settings > Greenfield > Microphone." }
         switch session.notice {
-        case .nothingHeard: return "Nothing was heard. Hold the button while you speak."
+        case .nothingHeard: return "Nothing was heard."
         case .failed(let message): return message
         case .none: break
         }
         switch session.listen.status {
         case .interrupted(let reason), .gaveUp(let reason): return reason
         case .off, .listening, .backgrounded: return nil
+        }
+    }
+}
+
+/// The flow state, big, and what the next sound will do.
+struct StateBanner: View {
+    let flow: FlowController
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Text(flow.state.title.uppercased())
+                .font(.title2.weight(.bold)).foregroundStyle(.white)
+                .frame(maxWidth: .infinity).padding(.vertical, 10)
+                .background(color, in: RoundedRectangle(cornerRadius: 12))
+            Text(flow.hint).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("State \(flow.state.title). \(flow.hint)")
+    }
+
+    private var color: Color {
+        switch flow.state {
+        case .idle: return .gray
+        case .dictating: return .red
+        case .review: return .orange
+        }
+    }
+}
+
+struct LastSoundLine: View {
+    let sound: FlowController.HeardSound?
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            if let sound {
+                let ago = max(0, Int(context.date.timeIntervalSince(sound.heardAt)))
+                let percent = Int((sound.event.probability * 100).rounded())
+                Label("Last sound: \(sound.event.pattern) (\(percent)%), \(ago) s ago", systemImage: "ear")
+                    .font(.footnote.monospacedDigit())
+            } else {
+                Label("No sound recognised yet", systemImage: "ear").font(.footnote).foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Dictated text lands here; Submit sends it to the active Mac.
+struct TextBox: View {
+    @Bindable var flow: FlowController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextEditor(text: $flow.text)
+                .frame(minHeight: 110)
+                .padding(6)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(alignment: .topLeading) {
+                    if flow.text.isEmpty {
+                        Text("Dictated text appears here").foregroundStyle(.tertiary).padding(14).allowsHitTesting(false)
+                    }
+                }
+                .accessibilityLabel("Dictated text")
+            HStack {
+                Button("Clear", systemImage: "xmark.circle") { flow.text = "" }.disabled(flow.text.isEmpty)
+                Spacer()
+                Button("Submit", systemImage: "paperplane.fill") { flow.submit() }
+                    .buttonStyle(.borderedProminent).disabled(!flow.canSubmit)
+            }
         }
     }
 }
@@ -108,33 +184,32 @@ struct HoldButton: View {
             })
         .sensoryFeedback(.impact, trigger: active)
         .accessibilityLabel("Hold to talk")
-        .accessibilityHint("Press and hold while you speak, then let go to send the text")
+        .accessibilityHint("Press and hold while you speak, then let go to write the text")
         .accessibilityAddTraits(.isButton)
     }
 }
 
-struct LastTranscript: View {
+/// The newest outbox entry: "Sent to MacBook in 12 ms", or why it is still queued.
+struct QueuedLine: View {
+    let item: OutboxItem
     let model: AppModel
 
     var body: some View {
-        if let item = model.outbox.items.first {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(item.text).font(.body).textSelection(.enabled)
-                StatusLine(item: item)
-                if item.status == .pending, !model.delivery.inFlight.contains(item.id) {
-                    Button("Send again") { model.resend(item.id) }.buttonStyle(.borderedProminent)
-                }
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Last submitted").font(.caption).foregroundStyle(.secondary)
+            Text(item.text).font(.callout).lineLimit(3)
+            StatusLine(item: item)
+            if item.status == .pending, !model.delivery.inFlight.contains(item.id) {
+                Button("Send again") { model.resend(item.id) }.buttonStyle(.bordered)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 14))
-        } else {
-            Text("Your words appear here.").font(.footnote).foregroundStyle(.secondary).padding()
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
-/// "Sent to MacBook in 12 ms", "Sending…" or the reason it failed.
+/// "Sent to MacBook in 12 ms", "Sending…" or the reason it is still queued.
 struct StatusLine: View {
     let item: OutboxItem
 
@@ -144,7 +219,7 @@ struct StatusLine: View {
             Label(sentText, systemImage: "checkmark.circle.fill").font(.footnote).foregroundStyle(.green)
         case .pending:
             if let error = item.lastError {
-                Label(error, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(.orange)
+                Label("Queued: \(error)", systemImage: "tray.full.fill").font(.footnote).foregroundStyle(.orange)
             } else {
                 Label("Sending…", systemImage: "arrow.up.circle").font(.footnote).foregroundStyle(.secondary)
             }

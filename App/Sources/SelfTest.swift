@@ -12,9 +12,42 @@ struct SelfTest {
 
     static func runIfRequested(_ model: AppModel) async {
         let test = SelfTest(model: model)
-        guard let name = test.defaults.string(forKey: "selftest-wav") else { return }
-        await test.run(wav: name)
+        if let name = test.defaults.string(forKey: "selftest-sounds") {
+            await test.runSounds(wav: name)
+        } else if let name = test.defaults.string(forKey: "selftest-wav") {
+            await test.run(wav: name)
+        } else {
+            return
+        }
         if test.defaults.bool(forKey: "selftest-exit") { exit(0) }
+    }
+
+    /// Feeds a recording through the microphone's sample bus (so the detector and the rules see it as live audio) and prints every
+    /// sound recognised and every rule that fired. `-selftest-sounds <file in Documents>`.
+    private func runSounds(wav name: String) async {
+        for _ in 0..<40 where model.flow.modelName.isEmpty { try? await Task.sleep(for: .milliseconds(250)) }
+        guard !model.flow.modelName.isEmpty else { return say("detector not running: \(model.flow.detectorProblem ?? "unknown")") }
+        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(name)
+        guard let samples = try? Self.load(url), !samples.isEmpty else { return say("cannot read \(name)") }
+        say("detector model \(model.flow.modelName), \(model.flow.detectorLabels.count) classes; clip \(samples.count / 16_000) s")
+        let bus = model.session.capture.bus
+        var index = 0
+        while index < samples.count {
+            let end = min(index + 4096, samples.count)
+            bus.publish(Array(samples[index..<end]))
+            index = end
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        try? await Task.sleep(for: .seconds(1))
+        let heard = Array(model.flow.recentSounds.reversed())
+        say("heard \(heard.count) sounds")
+        for sound in heard {
+            let event = sound.event
+            let fired = sound.firedRule.map { " FIRED \($0)" } ?? ""
+            let time = String(format: "%.2f", event.time), probability = String(format: "%.3f", event.probability)
+            say("t=\(time) \(event.pattern) \(event.topClass) p=\(probability)\(fired)")
+        }
+        say("final state \(model.flow.state.title)")
     }
 
     private func say(_ line: String) { print("SELFTEST \(line)") }
@@ -35,6 +68,9 @@ struct SelfTest {
         } else {
             await model.session.finish(.init(pcm: samples, peakDb: UtteranceBuffer.peakDb(samples)), silent: false)
         }
+        for _ in 0..<40 where model.flow.text.isEmpty { try? await Task.sleep(for: .milliseconds(250)) }
+        say("text box: \(model.flow.text)")
+        model.flow.submit()
         await waitForDelivery(after: before)
         report(after: before)
     }

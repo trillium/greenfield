@@ -5,7 +5,7 @@ What the phone sends and what a Mac-side receiver (the "inserter") must answer. 
 Contract versioning follows `docs/versioning.md`: a breaking change bumps the contract MAJOR and the app MAJOR together.
 
 ## Transport and trust
-- Plain HTTP over a private network (a Tailscale tailnet). The phone allows plain http only to `*.ts.net` names and local-network hosts (see `App/Resources/AppInfo.plist`). Never expose a receiver to the public internet.
+- Plain HTTP over a private network (a Tailscale tailnet). The phone allows plain http to `*.ts.net` names (subdomains included) and local short names through App Transport Security (see `App/Resources/AppInfo.plist`), and reaches 100.x tailnet addresses with a plain TCP transport (`HTTPTransport.swift`); there is no blanket exception. Before sending to a tailnet name or address the phone checks that it is connected to the tailnet and says so if it is not. Never expose a receiver to the public internet.
 - One receiver per Mac, each with its own secret key. The phone keeps a list of Macs (name, address, key); the key is stored in the iOS Keychain, never in preferences or logs.
 - The key travels in the `X-Dictation-Key` request header. It is never put in a URL.
 - Audio never leaves the phone. Only text is sent.

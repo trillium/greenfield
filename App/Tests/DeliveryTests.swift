@@ -29,7 +29,7 @@ final class ReceiverClientTests: XCTestCase {
     private let base = URL(string: "http://mac.ts.net:7788")!
     private let id = UUID()
 
-    private func client() -> ReceiverClient { ReceiverClient(session: StubURLProtocol.session()) }
+    private func client() -> ReceiverClient { ReceiverClient(session: StubURLProtocol.session(), tailnetConnected: { true }) }
 
     func testSendPostsTheContractRequest() async throws {
         StubURLProtocol.install { _ in (200, json(["ok": true, "status": "inserted", "duplicate": false, "ms": 7])) }

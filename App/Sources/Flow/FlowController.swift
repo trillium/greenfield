@@ -1,0 +1,149 @@
+import Foundation
+import Observation
+
+/// Runs the dictation flow: sounds go through the rules, the rules start and end dictation and submit the text.
+/// The hold button is the fallback and drives the same state.
+@MainActor
+@Observable
+final class FlowController {
+    struct HeardSound: Identifiable, Equatable {
+        let id = UUID()
+        let event: SoundEvent
+        let heardAt: Date
+        /// The rule this sound fired, if any.
+        let firedRule: String?
+    }
+
+    static let keepSounds = 100
+
+    private(set) var engine: RuleEngine
+    /// The text box on the Dictate screen: dictated text lands here and Submit sends it.
+    var text = ""
+    private(set) var lastSound: HeardSound?
+    private(set) var recentSounds: [HeardSound] = []
+    private(set) var modelName = ""
+    private(set) var detectorLabels: [String] = []
+    private(set) var detectorProblem: String?
+    private(set) var submitPending = false
+
+    let session: DictationSession
+    let delivery: DeliveryService
+    let models: ParrotModelStore
+    private let ruleStore: RuleStore
+    private var listener: SoundListener?
+    private var observer: NSObjectProtocol?
+
+    init(session: DictationSession, delivery: DeliveryService, models: ParrotModelStore, ruleStore: RuleStore) {
+        self.session = session
+        self.delivery = delivery
+        self.models = models
+        self.ruleStore = ruleStore
+        engine = RuleEngine(rules: ruleStore.load())
+        session.onDictating = { [weak self] on in self?.dictationChanged(on) }
+        session.onTranscript = { [weak self] text, _ in self?.transcribed(text) }
+        observer = NotificationCenter.default.addObserver(forName: ParrotModelStore.didChange, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.startDetector() }
+        }
+    }
+
+    var state: FlowState { engine.state }
+    var rules: [SoundRule] { engine.rules }
+    var availableSounds: [String] { models.activePatterns() }
+    var canSubmit: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    /// What the next sound will do, for the screen: the first enabled rule that applies in the current state.
+    var hint: String {
+        let applicable = engine.rules.filter { $0.enabled && $0.from == state }
+        guard !applicable.isEmpty else { return "No rule applies in this state." }
+        return applicable.map { "\($0.trigger.summary) → \($0.action.title)" }.joined(separator: "; ")
+    }
+
+    // MARK: Detector
+
+    /// Builds the detector from the active model and subscribes it to the microphone's one tap. Safe to call again after a model change.
+    func startDetector() {
+        listener?.cancel()
+        listener = nil
+        do {
+            let source = try models.source()
+            let detector = try SoundDetector(model: source.model, patternsJSON: source.patternsJSON)
+            modelName = source.name
+            detectorLabels = detector.labels
+            detectorProblem = nil
+            listener = SoundListener(detector: detector, bus: session.capture.bus) { events in
+                MainActor.assumeIsolated { [weak self] in self?.heard(events) }
+            }
+        } catch {
+            detectorProblem = String(describing: error)
+        }
+    }
+
+    func heard(_ events: [SoundEvent]) {
+        for event in events {
+            let fired = engine.hear(event.pattern, at: event.time)
+            let sound = HeardSound(event: event, heardAt: Date(), firedRule: fired?.summary)
+            lastSound = sound
+            recentSounds.insert(sound, at: 0)
+            if recentSounds.count > Self.keepSounds { recentSounds.removeLast(recentSounds.count - Self.keepSounds) }
+            if let fired { perform(fired.action) }
+        }
+    }
+
+    // MARK: Rules
+
+    func setRules(_ rules: [SoundRule]) {
+        engine.rules = rules
+        ruleStore.save(rules)
+    }
+
+    func resetRules() { setRules(SoundRule.defaults) }
+
+    // MARK: Actions
+
+    func perform(_ action: FlowAction) {
+        switch action {
+        case .startDictation: session.beginSoundDictation()
+        case .endDictation: session.endSoundDictation()
+        case .submit: submit()
+        case .clearText: text = ""
+        case .none: break
+        }
+        // A rule can move to dictating when the microphone is not ready; keep the state honest.
+        if action == .startDictation, !session.isHolding { engine.setState(.idle) }
+    }
+
+    /// Sends the text box to the active Mac (queued in the outbox when it cannot be reached) and clears it.
+    /// If speech is still being transcribed, the submit waits for it, so the last words are not left behind.
+    func submit() {
+        guard session.transcribing > 0 || session.isHolding else { return send() }
+        submitPending = true
+        Task {
+            while session.transcribing > 0 || session.isHolding { try? await Task.sleep(for: .milliseconds(100)) }
+            if submitPending { send() }
+        }
+    }
+
+    private func send() {
+        submitPending = false
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        engine.setState(.idle)
+        guard !trimmed.isEmpty else { return }
+        let item = delivery.outbox.add(text: trimmed)
+        text = ""
+        Task { await delivery.deliver(item.id) }
+    }
+
+    // MARK: Session callbacks
+
+    private func dictationChanged(_ on: Bool) {
+        if on {
+            engine.setState(.dictating)
+        } else if engine.state == .dictating {
+            engine.setState(.review)
+        }
+    }
+
+    private func transcribed(_ words: String) {
+        text = text.isEmpty ? words : text + " " + words
+    }
+}

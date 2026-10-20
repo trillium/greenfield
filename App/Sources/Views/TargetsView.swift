@@ -23,7 +23,8 @@ struct TargetsView: View {
                 Section {
                     Text("""
                     Text goes to exactly one Mac: the selected one. Each Mac has its own key. Use the Mac's tailnet name \
-                    (for example macbook.your-tailnet.ts.net) or its tailnet address, optionally with :port (default 7788).
+                    (for example macbook.your-tailnet.ts.net), a short name, or its 100.x tailnet address, optionally with :port \
+                    (default 7788). The phone must be connected to the tailnet (Tailscale on).
                     """).font(.footnote).foregroundStyle(.secondary)
                 }
             }
@@ -87,6 +88,10 @@ struct TargetEditView: View {
                     TextField("Name", text: $name)
                     TextField("Tailnet name or address", text: $address)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                    if draft.baseURL == nil, !address.isEmpty {
+                        Text("Use a name such as mini0.your-tailnet.ts.net, a short name, or a 100.x address, optionally with :port.")
+                            .font(.footnote).foregroundStyle(.orange)
+                    }
                 }
                 Section {
                     SecureField(target == nil ? "Key" : "Key (leave empty to keep the saved one)", text: $key)

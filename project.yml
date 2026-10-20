@@ -26,11 +26,20 @@ targets:
   DictationApp:
     type: application
     platform: iOS
-    sources: [App/Sources]
+    sources:
+      - App/Sources
+      # Staged by `make core` (never committed): the detector's model is personal training data.
+      - path: .parrot-core/resources
+        buildPhase: resources
     dependencies:
       - package: FluidAudio
     settings:
       base:
+        SWIFT_OBJC_BRIDGING_HEADER: $(SRCROOT)/App/ParrotCoreBridge.h
+        HEADER_SEARCH_PATHS: ["$(inherited)", "$(SRCROOT)/.parrot-core/include"]
+        # One exact archive per SDK: both slices are called libparrot_core.a, so a search path could link the wrong one.
+        "OTHER_LDFLAGS[sdk=iphoneos*]": ["$(inherited)", "$(SRCROOT)/.parrot-core/device/libparrot_core.a"]
+        "OTHER_LDFLAGS[sdk=iphonesimulator*]": ["$(inherited)", "$(SRCROOT)/.parrot-core/sim/libparrot_core.a"]
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_FILE: App/Resources/AppInfo.plist  # microphone usage text and the ATS exception for *.ts.net; the rest is generated
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -55,6 +64,7 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: $(PRODUCT_BUNDLE_IDENTIFIER).tests
+        HEADER_SEARCH_PATHS: ["$(inherited)", "$(SRCROOT)/.parrot-core/include"]
   DictationSpike:
     type: application
     platform: iOS

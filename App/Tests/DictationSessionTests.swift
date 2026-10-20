@@ -146,17 +146,31 @@ final class UtteranceGateTests: XCTestCase {
 
 @MainActor
 final class AppModelTests: XCTestCase {
-    func testATranscriptIsKeptThenSentToTheSelectedMac() async throws {
+    private func makeModel() throws -> AppModel {
         StubURLProtocol.install { _ in (200, json(["ok": true, "status": "inserted", "duplicate": false, "ms": 3])) }
         let store = TargetStore(defaults: isolatedDefaults(), keys: MemoryKeyStore())
         try store.save(MacTarget(name: "MacBook", address: "macbook.ts.net"), key: "k")
-        let model = AppModel(session: DictationSession(transcriber: FakeTranscriber()), outbox: Outbox(url: nil), targets: store,
-                             client: ReceiverClient(session: StubURLProtocol.session()))
-        model.received("Hello there.", asrMs: 44)
+        return AppModel(session: DictationSession(transcriber: FakeTranscriber()), outbox: Outbox(url: nil), targets: store,
+                        client: ReceiverClient(session: StubURLProtocol.session(), tailnetConnected: { true }),
+                        models: ParrotModelStore(directory: temporaryFile(), bundled: { [] }),
+                        ruleStore: RuleStore(defaults: isolatedDefaults()))
+    }
+
+    func testSubmittedTextIsKeptThenSentToTheSelectedMac() async throws {
+        let model = try makeModel()
+        model.flow.text = "Hello there."
+        model.flow.submit()
         XCTAssertEqual(model.outbox.items.first?.text, "Hello there.")
-        XCTAssertEqual(model.outbox.items.first?.asrMs, 44)
+        XCTAssertEqual(model.flow.text, "", "the box is cleared on submit")
         for _ in 0..<50 where model.outbox.items.first?.status != .sent { try await Task.sleep(for: .milliseconds(20)) }
         XCTAssertEqual(model.outbox.items.first?.status, .sent)
+    }
+
+    func testSubmittingNothingSendsNothing() throws {
+        let model = try makeModel()
+        model.flow.text = "  \n "
+        model.flow.submit()
+        XCTAssertTrue(model.outbox.items.isEmpty)
     }
 
     func testTheModelNoticeCreditsNvidiaAndTheLicence() {

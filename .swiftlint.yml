@@ -11,4 +11,4 @@ line_length:
   warning: 140
   error: 200
 identifier_name:
-  excluded: [n, ok, ts, id, ms]
+  excluded: [n, ok, ts, id, ms, on, to]

@@ -1,12 +1,14 @@
 SHELL := /bin/bash
 SCRIPT_FILES := $(wildcard scripts/*.sh) $(wildcard tools/*/*.sh) $(wildcard .githooks/*)
 
-.PHONY: help doctor generate build device-compile test archive archive-unsigned version release test-version check lint shell secrets hooks stub-receiver stub-receiver-test spike-build spike-audio clean
+.PHONY: help doctor generate build device-compile test archive archive-unsigned version release test-version check lint shell secrets hooks stub-receiver stub-receiver-test spike-build spike-audio core clean
 help: ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/'
 
 doctor: ## check Xcode, tools, identity, signing prerequisites (SIGNING=1 makes signing items fatal)
 	scripts/doctor.sh $(if $(SIGNING),--signing)
+core: ## stage the sound detector libraries and the bundled model into .parrot-core (see scripts/fetch-core.sh)
+	scripts/fetch-core.sh
 generate: ## generate the .xcodeproj from project.yml
 	xcodegen generate
 build: ## simulator build, no signing

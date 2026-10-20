@@ -45,7 +45,27 @@ struct ReceiverClient: Sendable {
     static let supportedContractMajor = 1
     static let maxBody = 4096
 
-    var session: URLSession = .dictation
+    /// For names. Tailnet addresses (100.x) go through `addressTransport`, which ATS does not govern.
+    var transport: HTTPTransport
+    var addressTransport: HTTPTransport = SocketTransport()
+    /// Whether this phone is on the tailnet; injectable for tests.
+    var tailnetConnected: @Sendable () -> Bool = Tailnet.isConnected
+
+    init(session: URLSession = .dictation, addressTransport: HTTPTransport = SocketTransport(),
+         tailnetConnected: @escaping @Sendable () -> Bool = Tailnet.isConnected) {
+        transport = URLSessionTransport(session: session)
+        self.addressTransport = addressTransport
+        self.tailnetConnected = tailnetConnected
+    }
+
+    private func route(for url: URL) -> HTTPTransport {
+        Tailnet.isIPv4Literal(url.host ?? "") ? addressTransport : transport
+    }
+
+    /// A clear refusal, instead of a timeout, when the Mac can only be reached through a tailnet this phone is not on.
+    private func offTailnet(_ url: URL) -> Bool {
+        Tailnet.needsTailnet(url.host ?? "") && !tailnetConnected()
+    }
 
     func send(id: UUID, text: String, to base: URL, key: String?) async -> (outcome: SendOutcome, networkMs: Int) {
         let start = DispatchTime.now().uptimeNanoseconds
@@ -58,9 +78,9 @@ struct ReceiverClient: Sendable {
             return (.refused(.tooLarge), 0)
         }
         request.httpBody = body
+        if offTailnet(base) { return (.unreachable(Tailnet.notConnectedMessage), 0) }
         do {
-            let (data, response) = try await session.data(for: request)
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let (status, data) = try await route(for: base).send(request)
             return (Self.interpret(status: status, data: data), elapsed())
         } catch {
             return (.unreachable(Self.describe(error)), elapsed())
@@ -70,9 +90,9 @@ struct ReceiverClient: Sendable {
     func health(of base: URL, key: String?) async -> Health {
         var request = URLRequest(url: base.appendingPathComponent("status"))
         if let key, !key.isEmpty { request.setValue(key, forHTTPHeaderField: "X-Dictation-Key") }
+        if offTailnet(base) { return .unreachable(Tailnet.notConnectedMessage) }
         do {
-            let (data, response) = try await session.data(for: request)
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let (status, data) = try await route(for: base).send(request)
             return Self.interpretHealth(status: status, data: data)
         } catch {
             return .unreachable(Self.describe(error))
