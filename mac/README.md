@@ -93,6 +93,35 @@ path (the Accessibility approval belongs to it), key file and directory permissi
 the running daemon is the installed binary, and whether each remembered Mac is reachable from here. Locally these ask the daemon's loopback-only `GET /health` (no key, 403 to
 anyone off the Mac); for remembered Macs they use `GET /status` with the saved key. Keys are never printed.
 
+## Selftest
+
+```
+greenfield-inserter selftest             # on the Mac itself, no phone needed (make -C mac selftest)
+greenfield-inserter macs ssh macbook user@macbook.<tailnet>.ts.net     # once
+greenfield-inserter macs selftest macbook                              # from another Mac, over ssh
+```
+
+It opens a small window with a focused text field, sends a unique harmless string through the real daemon on
+loopback (`POST /text`, the paste path), reads the field back to prove arrival, then sends a Return key press
+(typed key event) and checks the field received it. It closes the window and prints PASS, or FAIL naming the
+step with what is wrong, why and the fix (the preflight reuses the `doctor` checks). The window takes the
+keyboard focus for a few seconds, so do not type while it runs.
+
+It authenticates with a throwaway token the daemon writes at start-up to `local-token` (mode 0600) in the
+config directory; the daemon accepts that token only on requests that arrive over loopback, and only once a
+key exists. The selftest never prints keys. A daemon older than this feature has no token: update it, or pass
+the Mac's key on stdin with `selftest --key-stdin`. `--simulate-delivery` skips the daemon and only exercises the
+window; its output is labelled SIMULATED and its exit code is always non-zero.
+
+## Keeping the Accessibility approval across rebuilds
+
+`make install` signs the binary ad-hoc by default. An ad-hoc signature is tied to the exact build, so every
+rebuilt and reinstalled binary needs the Accessibility approval again. Signing with a development certificate
+instead gives the binary a designated requirement of its identifier plus the certificate (not the build), which
+macOS keeps matching across rebuilds: `SIGN_IDENTITY="Apple Development: <name> (<id>)" make -C mac install`.
+The signing must run where the certificate's private key is available and unlocked (a terminal on that Mac's
+desktop, not a plain ssh session).
+
 ## Logs
 
 `~/.config/greenfield-inserter/inserter.log` (rotated at 2 MB) records start-up, requests, status codes,

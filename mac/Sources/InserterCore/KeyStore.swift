@@ -29,6 +29,7 @@ public struct InserterPaths {
     public var keyFile: URL { directory.appendingPathComponent("key") }
     public var nameFile: URL { directory.appendingPathComponent("name") }
     public var logFile: URL { directory.appendingPathComponent("inserter.log") }
+    public var localTokenFile: URL { directory.appendingPathComponent("local-token") }
 
     public func ensureDirectory() throws {
         try FileManager.default.createDirectory(
@@ -189,10 +190,37 @@ public struct MacName {
 
     public func clear() { try? FileManager.default.removeItem(at: paths.nameFile) }
 
-    static func hostname() -> String {
+    public static func hostname() -> String {
         var buf = [CChar](repeating: 0, count: 256)
         guard gethostname(&buf, buf.count) == 0 else { return "mac" }
         let full = String(cString: buf)
         return full.split(separator: ".").first.map(String.init) ?? full
+    }
+}
+
+/// A throwaway credential the daemon makes for itself each time it starts and writes to a 0600 file.
+/// It is accepted only from requests that arrive over loopback, so tools on this Mac that can read
+/// the file (the same user) can talk to the daemon without ever seeing the real key.
+public enum LocalToken {
+    public static func create(paths: InserterPaths) throws -> String {
+        try paths.ensureDirectory()
+        var bytes = [UInt8](repeating: 0, count: 20)
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else { throw KeyStoreError.randomFailed }
+        let token = Base32.encode(bytes)
+        let tmp = paths.localTokenFile.path + ".tmp"
+        unlink(tmp)
+        let fd = open(tmp, O_WRONLY | O_CREAT | O_EXCL, 0o600)
+        guard fd >= 0 else { throw KeyStoreError.io("cannot write \(tmp): errno \(errno)") }
+        let line = Array((token + "\n").utf8)
+        let ok = Darwin.write(fd, line, line.count) == line.count
+        close(fd)
+        guard ok, rename(tmp, paths.localTokenFile.path) == 0 else { throw KeyStoreError.io("could not save the local token") }
+        return token
+    }
+
+    public static func read(paths: InserterPaths) -> String? {
+        guard let t = try? String(contentsOf: paths.localTokenFile, encoding: .utf8) else { return nil }
+        let trimmed = t.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }

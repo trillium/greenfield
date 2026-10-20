@@ -108,6 +108,41 @@ final class HandlerTests: XCTestCase {
         XCTAssertFalse(String(data: r.body, encoding: .utf8)!.contains("good"))
     }
 
+    // MARK: local token
+
+    func localHandler() -> RequestHandler {
+        RequestHandler(keys: keys, probe: probe, inserter: inserter, name: { "Test Mac" }, localToken: "tok-local", logger: logger)
+    }
+
+    func testLocalTokenWorksOnlyOverLoopback() {
+        let h = localHandler()
+        func call(_ token: String, loopback: Bool) -> Int {
+            h.handle(HTTPRequest(method: "GET", path: "/status", headers: ["x-dictation-key": token], fromLoopback: loopback)).status
+        }
+        XCTAssertEqual(call("tok-local", loopback: true), 200)
+        XCTAssertEqual(call("tok-local", loopback: false), 401)     // arrived over the network
+        XCTAssertEqual(call("tok-other", loopback: true), 401)
+        XCTAssertEqual(call("good", loopback: false), 200)          // the real key still works
+    }
+
+    func testLocalTokenCannotBypassAMissingKey() {
+        keys.result = .notConfigured
+        let r = localHandler().handle(HTTPRequest(method: "GET", path: "/status", headers: ["x-dictation-key": "tok-local"], fromLoopback: true))
+        XCTAssertEqual(r.status, 503)
+    }
+
+    func testLocalTokenFile() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("tok-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let paths = InserterPaths(directory: dir)
+        XCTAssertNil(LocalToken.read(paths: paths))
+        let t = try LocalToken.create(paths: paths)
+        XCTAssertEqual(LocalToken.read(paths: paths), t)
+        let mode = (try FileManager.default.attributesOfItem(atPath: paths.localTokenFile.path)[.posixPermissions] as? NSNumber)?.intValue
+        XCTAssertEqual(mode, 0o600)
+        XCTAssertNotEqual(try LocalToken.create(paths: paths), t)    // new one each start
+    }
+
     // MARK: auth
 
     func testMissingAndWrongKeyAre401() {

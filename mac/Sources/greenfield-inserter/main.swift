@@ -19,6 +19,11 @@ usage:
   greenfield-inserter health [--port N]       fast yes/no for this Mac's daemon; exit 0 only if everything is good
   greenfield-inserter doctor [--port N]       slower; for each failed check says what is wrong, why it matters and the fix
   greenfield-inserter macs health | doctor    the same for every remembered Mac, seen from here
+  greenfield-inserter selftest [--port N] [--key-stdin]
+                                              open a test window, send a test string and a Return through this Mac's
+                                              own daemon, read them back; prints PASS or FAIL with the fix
+  greenfield-inserter macs selftest ALIAS     run that on another Mac over ssh (see `macs ssh`)
+  greenfield-inserter macs ssh ALIAS USER@HOST remember how to ssh to that Mac
   greenfield-inserter permissions             check Accessibility; ask macOS to prompt if missing
 
 environment: GREENFIELD_INSERTER_HOME overrides ~/.config/greenfield-inserter
@@ -48,10 +53,11 @@ case "serve":
     let nameOverride = option("--name", in: args)
     try? paths.ensureDirectory()
     let logger = FileLogger(file: paths.logFile, echoToStderr: args.contains("--log-stderr"))
+    let localToken = try? LocalToken.create(paths: paths)
     var server: HTTPServer!
     let handler = RequestHandler(keys: keys, probe: MacSystemProbe(), inserter: MacInserter(),
                                  name: { nameOverride ?? macName.current() }, listening: { server.listening() },
-                                 logger: logger)
+                                 localToken: localToken, logger: logger)
     logger.log("starting \(RequestHandler.serviceName) \(RequestHandler.version) name=\(nameOverride ?? macName.current())")
     if !keys.isConfigured { logger.log("no key configured; run `greenfield-inserter key create`") }
     if !MacSystemProbe().accessibilityTrusted { logger.log("Accessibility not granted; run `greenfield-inserter permissions`") }
@@ -118,6 +124,16 @@ case "health", "doctor":
     }
     exit(isHealthy(checks) ? 0 : 1)
 
+case "selftest":
+    let port = Int(option("--port", in: args) ?? String(InserterDefaults.port)) ?? 0
+    guard port > 0, port < 65536 else { fail("bad --port", code: 2) }
+    let simulate = args.contains("--simulate-delivery")   // development only: proves the window, not delivery
+    let stdinKey = args.contains("--key-stdin") ? readLine(strippingNewline: true)?.trimmingCharacters(in: .whitespacesAndNewlines) : nil
+    let observations = runSelftest(port: port, keyFromStdin: stdinKey, simulate: simulate, paths: paths)
+    let checks = evaluateSelftest(observations)
+    print(formatSelftest(label: macName.current(), checks: checks, simulated: simulate))
+    exit(selftestPassed(checks) && !simulate ? 0 : 1)
+
 case "macs":
     let registry = MacRegistry(paths: paths)
     let all = registry.load()
@@ -169,6 +185,30 @@ case "macs":
         print(done.map { doctor ? formatDoctor(label: $0.0, checks: $0.1) : formatHealth(label: $0.0, checks: $0.1) }
             .joined(separator: doctor ? "\n\n" : "\n"))
         exit(done.allSatisfy { isHealthy($0.1) } ? 0 : 1)
+    case "ssh":
+        guard args.count >= 4, let m = all.first(where: { $0.alias == args[2] }) else { fail("usage: macs ssh ALIAS USER@HOST (alias must exist)", code: 2) }
+        var updated = m; updated.ssh = args[3]
+        do { try registry.upsert(updated); print("saved ssh target for \(m.alias)") } catch { fail("\(error)") }
+    case "selftest":
+        guard args.count >= 3 else { fail("usage: macs selftest ALIAS", code: 2) }
+        let m = find(args[2])
+        let remoteBinary = option("--remote-binary", in: args) ?? ".local/share/greenfield-inserter/greenfield-inserter"
+        let isHere = ["localhost", "127.0.0.1"].contains(m.host) || m.host.split(separator: ".").first.map(String.init) == MacName.hostname()
+        let command: [String]
+        if isHere {
+            command = [CommandLine.arguments[0], "selftest", "--port", String(m.port)]
+        } else if let target = m.ssh {
+            command = ["/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", target,
+                       "\(remoteBinary) selftest --port \(m.port)"]
+        } else {
+            fail("no ssh target for \(m.alias); add one with `macs ssh \(m.alias) USER@HOST`, or run `greenfield-inserter selftest` on that Mac")
+        }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: command[0])
+        p.arguments = Array(command.dropFirst())
+        do { try p.run() } catch { fail("could not run \(command[0]): \(error)") }
+        p.waitUntilExit()
+        exit(p.terminationStatus)
     case "check":
         guard !all.isEmpty else { fail("no Macs yet; add one with `macs add ALIAS HOST`") }
         var reports = [MacReport?](repeating: nil, count: all.count)

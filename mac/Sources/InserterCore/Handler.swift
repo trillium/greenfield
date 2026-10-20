@@ -40,6 +40,7 @@ public final class RequestHandler {
     private let dedupe: DedupeCache
     private let name: () -> String
     private let listening: () -> [String]
+    private let localToken: String?
     private let logger: RequestLogger?
     private let started: Date
     private let now: () -> Date
@@ -48,13 +49,14 @@ public final class RequestHandler {
 
     public init(keys: KeyVerifier, probe: SystemProbe, inserter: TextInserter, dedupe: DedupeCache = DedupeCache(),
                 name: @escaping () -> String, listening: @escaping () -> [String] = { [] },
-                logger: RequestLogger? = nil, now: @escaping () -> Date = Date.init) {
+                localToken: String? = nil, logger: RequestLogger? = nil, now: @escaping () -> Date = Date.init) {
         self.keys = keys
         self.probe = probe
         self.inserter = inserter
         self.dedupe = dedupe
         self.name = name
         self.listening = listening
+        self.localToken = localToken
         self.logger = logger
         self.now = now
         self.started = now()
@@ -73,7 +75,14 @@ public final class RequestHandler {
             return .error(404, "not_found", "unknown path")
         }
         // Authenticate before revealing anything else, including whether the method is right.
-        switch keys.verify(request.headers["x-dictation-key"]) {
+        let presented = request.headers["x-dictation-key"]
+        var check = keys.verify(presented)
+        // The daemon's own throwaway token counts as the key, but only over loopback and only once a key exists.
+        if check == .mismatch, request.fromLoopback, let token = localToken, let presented = presented,
+           constantTimeEqual(Array(presented.utf8), Array(token.utf8)) {
+            check = .ok
+        }
+        switch check {
         case .ok: break
         case .mismatch: return .error(401, "unauthorized", "missing or wrong X-Dictation-Key")
         case .notConfigured:

@@ -7,7 +7,10 @@
 #   scripts/agent.sh status      show whether launchd is running it
 #   scripts/agent.sh logs        tail the log
 #
-# Overrides (mainly for testing): LABEL, PREFIX, PORT, GREENFIELD_INSERTER_HOME.
+# Overrides: LABEL, PREFIX, PORT, GREENFIELD_INSERTER_HOME (mainly for testing), and
+# SIGN_IDENTITY - a code-signing identity name to sign with instead of the default ad-hoc signature.
+# An ad-hoc signature changes with every build, which invalidates the Accessibility approval; a
+# certificate signature keeps the same identity across rebuilds.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -26,7 +29,7 @@ install)
     chmod 700 "$CONFIG_HOME"
     # launchd needs a stable path, and macOS ties the Accessibility grant to that binary.
     cp .build/release/greenfield-inserter "$PREFIX/greenfield-inserter.new"
-    codesign --force --sign - --identifier greenfield-inserter "$PREFIX/greenfield-inserter.new" 2>/dev/null
+    codesign --force --sign "${SIGN_IDENTITY:--}" --identifier greenfield-inserter "$PREFIX/greenfield-inserter.new"
     launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
     mv "$PREFIX/greenfield-inserter.new" "$PREFIX/greenfield-inserter"
     cat > "$PLIST" <<PLISTEOF

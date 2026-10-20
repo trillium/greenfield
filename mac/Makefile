@@ -2,7 +2,7 @@
 SWIFT ?= swift
 PORT  ?= 47821
 
-.PHONY: build test run key check health doctor insert-test permissions install uninstall status logs clean
+.PHONY: build test run key check health doctor selftest insert-test permissions install uninstall status logs clean
 
 build:
 	$(SWIFT) build -c release
@@ -28,6 +28,10 @@ health: build
 
 doctor: build
 	.build/release/greenfield-inserter doctor
+
+# Open a test window and push a test string and a Return through this Mac's own daemon; PASS or FAIL with the fix.
+selftest: build
+	.build/release/greenfield-inserter selftest
 
 # Insert a harmless test string into the focused app of one Mac: make insert-test MAC=alias
 insert-test: build

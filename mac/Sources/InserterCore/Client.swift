@@ -7,9 +7,11 @@ public struct KnownMac: Codable, Equatable {
     public var host: String
     public var port: Int
     public var key: String
+    /// Optional `user@host` for running commands on that Mac over ssh (used by `macs selftest`).
+    public var ssh: String?
 
-    public init(alias: String, host: String, port: Int = 47821, key: String) {
-        self.alias = alias; self.host = host; self.port = port; self.key = key
+    public init(alias: String, host: String, port: Int = 47821, key: String, ssh: String? = nil) {
+        self.alias = alias; self.host = host; self.port = port; self.key = key; self.ssh = ssh
     }
 }
 
@@ -141,8 +143,10 @@ public enum InserterClient {
     }
 
     public static func sendText(_ text: String, to mac: KnownMac, id: String = UUID().uuidString,
-                                source: String = "cli", timeout: TimeInterval = 10) -> SendResult {
-        let payload = try? JSONSerialization.data(withJSONObject: ["id": id, "text": text, "source": source])
+                                source: String = "cli", method: String? = nil, timeout: TimeInterval = 10) -> SendResult {
+        var object: [String: Any] = ["id": id, "text": text, "source": source]
+        if let method = method { object["method"] = method }
+        let payload = try? JSONSerialization.data(withJSONObject: object)
         switch request(mac, method: "POST", path: "/text", body: payload, timeout: timeout) {
         case .failure(let e): return SendResult(httpStatus: nil, summary: "unreachable (\(e.message))", inserted: false)
         case .success(let (code, body)): return interpretSend(httpStatus: code, body: body)
