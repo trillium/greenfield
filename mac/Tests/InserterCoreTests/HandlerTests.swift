@@ -37,7 +37,8 @@ final class HandlerTests: XCTestCase {
 
     override func setUp() {
         keys = StubKeys(); probe = StubProbe(); inserter = SpyInserter(); logger = SpyLogger()
-        handler = RequestHandler(keys: keys, probe: probe, inserter: inserter, name: { "Test Mac" }, logger: logger)
+        handler = RequestHandler(keys: keys, probe: probe, inserter: inserter, name: { "Test Mac" },
+                                 listening: { ["100.84.99.99:47821", "127.0.0.1:47821"] }, logger: logger)
     }
 
     func post(_ json: String, key: String? = "good") -> HTTPResponse {
@@ -71,6 +72,19 @@ final class HandlerTests: XCTestCase {
         XCTAssertEqual(o["secure_input"] as? Bool, true)
         XCTAssertEqual(o["screen_locked"] as? Bool, true)
         XCTAssertEqual(o["accessibility"] as? Bool, false)
+    }
+
+    func testAnyHostHeaderIsAccepted() {
+        for host in ["mini0", "mini0.hippo-tilapia.ts.net", "100.84.99.99:47821", "localhost", "anything.example"] {
+            let r = handler.handle(HTTPRequest(method: "GET", path: "/status",
+                                               headers: ["Host": host, "X-Dictation-Key": "good"]))
+            XCTAssertEqual(r.status, 200, host)
+        }
+    }
+
+    func testStatusReportsListeningAddresses() {
+        let o = object(handler.handle(HTTPRequest(method: "GET", path: "/status", headers: ["x-dictation-key": "good"])))
+        XCTAssertEqual(o["listen"] as? [String], ["100.84.99.99:47821", "127.0.0.1:47821"])
     }
 
     // MARK: auth

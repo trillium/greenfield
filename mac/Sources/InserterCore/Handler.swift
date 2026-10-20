@@ -39,6 +39,7 @@ public final class RequestHandler {
     private let inserter: TextInserter
     private let dedupe: DedupeCache
     private let name: () -> String
+    private let listening: () -> [String]
     private let logger: RequestLogger?
     private let started: Date
     private let now: () -> Date
@@ -46,12 +47,14 @@ public final class RequestHandler {
     private var insertedCount = 0
 
     public init(keys: KeyVerifier, probe: SystemProbe, inserter: TextInserter, dedupe: DedupeCache = DedupeCache(),
-                name: @escaping () -> String, logger: RequestLogger? = nil, now: @escaping () -> Date = Date.init) {
+                name: @escaping () -> String, listening: @escaping () -> [String] = { [] },
+                logger: RequestLogger? = nil, now: @escaping () -> Date = Date.init) {
         self.keys = keys
         self.probe = probe
         self.inserter = inserter
         self.dedupe = dedupe
         self.name = name
+        self.listening = listening
         self.logger = logger
         self.now = now
         self.started = now()
@@ -97,6 +100,7 @@ public final class RequestHandler {
             "screen_locked": probe.screenLocked,
             "accessibility": probe.accessibilityTrusted,
             "inserted_count": count,
+            "listen": listening(),
         ])
     }
 

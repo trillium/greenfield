@@ -27,6 +27,7 @@ public enum Tailnet {
 /// A small blocking HTTP/1.1 server on BSD sockets, one short-lived connection per request.
 public final class HTTPServer {
     public enum BindTarget {
+        /// The tailnet address plus loopback.
         case tailnet
         case address(String)
     }
@@ -44,15 +45,46 @@ public final class HTTPServer {
         self.logger = logger
     }
 
-    /// Runs forever: waits for the bind address to exist, serves on it, and re-binds if it goes away.
+    /// Addresses currently being served, as "ip:port"; reported by /status.
+    public func listening() -> [String] {
+        lock.lock(); defer { lock.unlock() }
+        return active.sorted()
+    }
+
+    private let lock = NSLock()
+    private var active = Set<String>()
+
+    private func setActive(_ address: String, _ on: Bool) {
+        lock.lock(); defer { lock.unlock() }
+        if on { active.insert("\(address):\(port)") } else { active.remove("\(address):\(port)") }
+    }
+
+    /// Runs forever. By default serves on the tailnet address and on loopback, nothing else; an
+    /// explicit address replaces both. Each listener waits for its address and re-binds if it goes away.
     public func run() -> Never {
         signal(SIGPIPE, SIG_IGN)
+        switch target {
+        case .address(let a):
+            thread { self.runListener(fixed: a) }
+        case .tailnet:
+            thread { self.runListener(fixed: "127.0.0.1") }
+            thread { self.runListener(fixed: nil) }
+        }
+        while true { sleep(3600) }
+    }
+
+    private func thread(_ body: @escaping () -> Void) {
+        Thread.detachNewThread(body)
+    }
+
+    /// `fixed` nil means "whatever the tailnet address currently is".
+    private func runListener(fixed: String?) {
         var waitingLogged = false
         while true {
             let address: String
-            switch target {
-            case .address(let a): address = a
-            case .tailnet:
+            if let fixed = fixed {
+                address = fixed
+            } else {
                 guard let a = Tailnet.ipv4() else {
                     if !waitingLogged { logger?.log("no tailnet address yet; waiting for Tailscale"); waitingLogged = true }
                     sleep(5)
@@ -63,7 +95,9 @@ public final class HTTPServer {
             waitingLogged = false
             guard let fd = listen(on: address) else { sleep(5); continue }
             logger?.log("listening on \(address):\(port)")
-            serve(fd, address: address)
+            setActive(address, true)
+            serve(fd, address: address, followTailnet: fixed == nil)
+            setActive(address, false)
             close(fd)
             logger?.log("listener on \(address) stopped; rebinding")
         }
@@ -90,7 +124,7 @@ public final class HTTPServer {
         return fd
     }
 
-    private func serve(_ listener: Int32, address: String) {
+    private func serve(_ listener: Int32, address: String, followTailnet: Bool) {
         // Accept with a timeout so we can notice the tailnet address disappearing.
         var tv = timeval(tv_sec: 10, tv_usec: 0)
         setsockopt(listener, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
@@ -101,7 +135,7 @@ public final class HTTPServer {
                 continue
             }
             if errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR {
-                if case .tailnet = target, Tailnet.ipv4() != address { return }
+                if followTailnet, Tailnet.ipv4() != address { return }
                 continue
             }
             return

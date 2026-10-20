@@ -6,9 +6,16 @@ greenfield-inserter \(RequestHandler.version) - receives text over the tailnet a
 
 usage:
   greenfield-inserter serve [--port N] [--bind IP] [--name NAME] [--log-stderr]
-  greenfield-inserter key create [--force]    make the key and show it once
+  greenfield-inserter key create [--force] [--out-file PATH]
+                                              make the key and show it once (or write it to a 0600 file instead)
   greenfield-inserter key status              say whether a key is set (never shows it)
   greenfield-inserter name [set NAME | reset] show or change the name the phone displays
+  greenfield-inserter macs add ALIAS HOST [--port N] [--key-stdin]
+                                              remember a Mac and its key (asked for without echo, or read from stdin)
+  greenfield-inserter macs list | remove ALIAS | show-key ALIAS
+  greenfield-inserter macs check              GET /status on every remembered Mac: name, version, locked / secure input
+  greenfield-inserter macs test [ALIAS] [--text STR]
+                                              insert a harmless test string into that Mac's focused app
   greenfield-inserter permissions             check Accessibility; ask macOS to prompt if missing
 
 environment: GREENFIELD_INSERTER_HOME overrides ~/.config/greenfield-inserter
@@ -38,18 +45,31 @@ case "serve":
     let nameOverride = option("--name", in: args)
     try? paths.ensureDirectory()
     let logger = FileLogger(file: paths.logFile, echoToStderr: args.contains("--log-stderr"))
+    var server: HTTPServer!
     let handler = RequestHandler(keys: keys, probe: MacSystemProbe(), inserter: MacInserter(),
-                                 name: { nameOverride ?? macName.current() }, logger: logger)
+                                 name: { nameOverride ?? macName.current() }, listening: { server.listening() },
+                                 logger: logger)
     logger.log("starting \(RequestHandler.serviceName) \(RequestHandler.version) name=\(nameOverride ?? macName.current())")
     if !keys.isConfigured { logger.log("no key configured; run `greenfield-inserter key create`") }
     if !MacSystemProbe().accessibilityTrusted { logger.log("Accessibility not granted; run `greenfield-inserter permissions`") }
-    HTTPServer(target: target, port: port, handler: handler, logger: logger).run()
+    server = HTTPServer(target: target, port: port, handler: handler, logger: logger)
+    server.run()
 
 case "key":
     switch args.dropFirst().first {
     case "create":
         do {
             let key = try keys.create(force: args.contains("--force"))
+            if let out = option("--out-file", in: args) {
+                let line = key + "\n"
+                let fd = open(out, O_WRONLY | O_CREAT | O_TRUNC, 0o600)
+                guard fd >= 0, Darwin.write(fd, line, line.utf8.count) == line.utf8.count else {
+                    fail("key created but could not write \(out); run `key create --force` to try again")
+                }
+                close(fd)
+                print("Key for \(macName.current()) written to \(out) (mode 0600). Move it where it is needed and delete it.")
+                exit(0)
+            }
             print("""
             Key for \(macName.current()) (shown once - enter it in the phone app now):
 
@@ -70,6 +90,60 @@ case "name":
         guard args.count >= 3 else { fail("name set needs a value", code: 2) }
         do { try macName.set(args.dropFirst(2).joined(separator: " ")); print(macName.current()) } catch { fail("\(error)") }
     case "reset": macName.clear(); print(macName.current())
+    default: fail(usage, code: 2)
+    }
+
+case "macs":
+    let registry = MacRegistry(paths: paths)
+    let all = registry.load()
+    func find(_ alias: String?) -> KnownMac {
+        if let alias = alias {
+            guard let m = all.first(where: { $0.alias == alias }) else { fail("no Mac with alias \(alias); see `macs list`") }
+            return m
+        }
+        guard all.count == 1 else { fail("say which Mac: \(all.map(\.alias).joined(separator: ", "))", code: 2) }
+        return all[0]
+    }
+    switch args.dropFirst().first {
+    case "add":
+        guard args.count >= 4 else { fail("usage: macs add ALIAS HOST [--port N] [--key-stdin]", code: 2) }
+        let port = Int(option("--port", in: args) ?? "47821") ?? 0
+        guard port > 0, port < 65536 else { fail("bad --port", code: 2) }
+        var key: String
+        if args.contains("--key-stdin") {
+            key = readLine(strippingNewline: true) ?? ""
+        } else {
+            guard isatty(0) == 1, let p = getpass("Key for \(args[2]) (hidden): ") else { fail("no terminal; pass --key-stdin") }
+            key = String(cString: p)
+        }
+        key = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { fail("empty key") }
+        do { try registry.upsert(KnownMac(alias: args[2], host: args[3], port: port, key: key)); print("saved \(args[2])") }
+        catch { fail("\(error)") }
+    case "remove":
+        guard args.count >= 3 else { fail("usage: macs remove ALIAS", code: 2) }
+        do { try registry.remove(args[2]); print("removed \(args[2])") } catch { fail("\(error)") }
+    case "list":
+        for m in all { print("\(m.alias)  \(m.host):\(m.port)") }
+    case "show-key":
+        print(find(args.count >= 3 ? args[2] : nil).key)
+    case "check":
+        guard !all.isEmpty else { fail("no Macs yet; add one with `macs add ALIAS HOST`") }
+        var reports = [MacReport?](repeating: nil, count: all.count)
+        let lock = NSLock()
+        DispatchQueue.concurrentPerform(iterations: all.count) { i in
+            let r = InserterClient.check(all[i]); lock.lock(); reports[i] = r; lock.unlock()
+        }
+        let done = reports.compactMap { $0 }
+        print(formatReports(done))
+        exit(done.contains { $0.needsAttention } ? 1 : 0)
+    case "test":
+        let mac = find(args.count >= 3 && !args[2].hasPrefix("--") ? args[2] : nil)
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        let text = option("--text", in: args) ?? "greenfield test \(stamp) "
+        let result = InserterClient.sendText(text, to: mac)
+        print("\(mac.alias): \(result.summary)")
+        exit(result.inserted ? 0 : 1)
     default: fail(usage, code: 2)
     }
 

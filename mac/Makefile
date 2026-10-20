@@ -2,7 +2,7 @@
 SWIFT ?= swift
 PORT  ?= 47821
 
-.PHONY: build test run key permissions install uninstall status logs clean
+.PHONY: build test run key check insert-test permissions install uninstall status logs clean
 
 build:
 	$(SWIFT) build -c release
@@ -17,6 +17,14 @@ run: build
 # Create this Mac's key and show it once. Refuses to overwrite; use `make key FORCE=--force` to rotate.
 key: build
 	.build/release/greenfield-inserter key create $(FORCE)
+
+# From the Mac that holds the keys (see `greenfield-inserter macs add`): status of every remembered Mac.
+check: build
+	.build/release/greenfield-inserter macs check
+
+# Insert a harmless test string into the focused app of one Mac: make insert-test MAC=alias
+insert-test: build
+	.build/release/greenfield-inserter macs test $(MAC)
 
 # Check Accessibility and make macOS show its permission prompt if it is missing.
 permissions: build

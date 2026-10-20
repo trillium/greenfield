@@ -6,8 +6,14 @@ routes. Each Mac runs its own copy with its own key, so a client can switch betw
 
 ## HTTP API
 
-Listens on this Mac's tailnet address only (the `100.64.0.0/10` address Tailscale assigns), port
-`47821`. Every request needs the header `X-Dictation-Key: <key>`.
+Port `47821`. Every request needs the header `X-Dictation-Key: <key>`.
+
+**Network policy.** Plain HTTP is used on purpose: the trust boundary is tailnet membership, plus the per-Mac
+key. The daemon listens on this Mac's tailnet address (the `100.64.0.0/10` address Tailscale assigns) and on
+loopback (`127.0.0.1`), and on no other interface (not the LAN, not `0.0.0.0`). It does not look at the `Host`
+header, so a request addressed by the short MagicDNS name, the full `*.ts.net` name or the `100.x` address
+all work. `GET /status` reports the addresses it is serving as `listen`, and `macs check` flags anything outside
+the policy.
 
 `GET /status` returns the Mac's `name` (hostname unless changed with `greenfield-inserter name set`),
 the daemon `version`, `uptime_s`, `secure_input`, `screen_locked`, `accessibility` and `inserted_count`.
@@ -50,6 +56,25 @@ picks the change up without a restart. Set `GREENFIELD_INSERTER_HOME` to use ano
 control this computer using accessibility features" (System Settings > Privacy & Security > Accessibility).
 macOS ties the grant to the installed binary (`~/.local/share/greenfield-inserter/greenfield-inserter`), so
 re-approve after `make install` replaces it with a rebuilt one.
+
+## Checking several Macs from one place
+
+On the Mac you sit at (or any machine on the tailnet), remember each Mac once, then check them all:
+
+```
+greenfield-inserter macs add mini0 mini0.<tailnet>.ts.net      # asks for the key without echo
+greenfield-inserter macs add macbook macbook.<tailnet>.ts.net
+make -C mac check                       # GET /status on every Mac: name, version, ready / locked / secure-input / needs approval / unreachable
+make -C mac insert-test MAC=macbook     # types a harmless "greenfield test <time>" into that Mac's focused app
+```
+
+`check` also prints each Mac's listening addresses with a policy verdict (tailnet and loopback only). It exits
+non-zero when a Mac is unreachable, rejects the key, lacks Accessibility, or listens outside the policy; locked and
+secure-input are reported but are normal. Keys for remembered Macs live in `macs.json` (mode 0600) beside the
+daemon's own files; `macs show-key ALIAS` prints one when you need to enter it into the phone app.
+`key create --out-file PATH` writes a new key to a 0600 file instead of the terminal, for setting up a Mac over ssh
+without the key passing through the session: `ssh mac 'greenfield-inserter key create --out-file k'`, then pipe
+the file into `macs add ... --key-stdin` and delete it.
 
 ## Logs
 
