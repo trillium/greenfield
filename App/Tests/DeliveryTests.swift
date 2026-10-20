@@ -34,7 +34,7 @@ final class ReceiverClientTests: XCTestCase {
     func testSendPostsTheContractRequest() async throws {
         StubURLProtocol.install { _ in (200, json(["ok": true, "status": "inserted", "duplicate": false, "ms": 7])) }
         let (outcome, _) = await client().send(id: id, text: "Hello, world.", to: base, key: "s3cret")
-        XCTAssertEqual(outcome, .delivered(duplicate: false, macMs: 7))
+        XCTAssertEqual(outcome, .delivered(duplicate: false, macMs: 7, delivery: nil))
         let request = try XCTUnwrap(StubURLProtocol.requests.first)
         XCTAssertEqual(request.httpMethod, "POST")
         XCTAssertEqual(request.url?.path, "/text")
@@ -66,7 +66,7 @@ final class ReceiverClientTests: XCTestCase {
 
     func testADuplicateAnswerCountsAsDelivered() {
         let outcome = ReceiverClient.interpret(status: 200, data: json(["ok": true, "status": "inserted", "duplicate": true]))
-        XCTAssertEqual(outcome, .delivered(duplicate: true, macMs: nil))
+        XCTAssertEqual(outcome, .delivered(duplicate: true, macMs: nil, delivery: nil))
     }
 
     func testAnAnswerThatIsNotAReceiverIsNotDelivery() {

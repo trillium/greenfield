@@ -5,7 +5,8 @@ struct ReceiverClient: Sendable {
     /// What happened to one `POST /text`.
     enum SendOutcome: Equatable, Sendable {
         /// The Mac inserted the text (or had already inserted this id). `macMs` is the receiver's own time.
-        case delivered(duplicate: Bool, macMs: Int?)
+        /// `delivery` is the agent's own evidence ("confirmed": read back from the field; "unconfirmed"); nil from older agents.
+        case delivered(duplicate: Bool, macMs: Int?, delivery: String?)
         /// The Mac answered and refused. The text was not inserted.
         case refused(Refusal)
         /// No usable answer: the Mac is off, the network is down, or the request timed out. The text may or may not have arrived.
@@ -46,6 +47,15 @@ struct ReceiverClient: Sendable {
         var secureInput = false
         var accessibility = true
         var insertedCount = 0
+        /// The agent's own answer to "can it actually insert text?", when it reports one (absent on older agents).
+        var delivery: DeliveryLine?
+    }
+
+    /// "Can actually insert text": yes or no, in the agent's words, with its fix text.
+    struct DeliveryLine: Equatable, Sendable {
+        var works: Bool
+        var message: String
+        var fix: String?
     }
 
     enum Health: Equatable, Sendable {
@@ -128,7 +138,8 @@ struct ReceiverClient: Sendable {
     static func interpret(status: Int, data: Data) -> SendOutcome {
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         if status == 200, json["ok"] as? Bool == true {
-            return .delivered(duplicate: json["duplicate"] as? Bool ?? false, macMs: json["ms"] as? Int)
+            return .delivered(duplicate: json["duplicate"] as? Bool ?? false, macMs: json["ms"] as? Int,
+                              delivery: json["delivery"] as? String)
         }
         if let error = json["error"] as? String, let refusal = Refusal(rawValue: error) { return .refused(refusal) }
         let byStatus: [Int: Refusal] = [401: .badKey, 409: .secureInput, 413: .tooLarge, 423: .locked, 400: .invalidText, 422: .invalidText,
@@ -154,7 +165,28 @@ struct ReceiverClient: Sendable {
                                 locked: json["screen_locked"] as? Bool ?? json["locked"] as? Bool ?? false,
                                 secureInput: json["secure_input"] as? Bool ?? false,
                                 accessibility: json["accessibility"] as? Bool ?? true,
-                                insertedCount: json["inserted_count"] as? Int ?? 0))
+                                insertedCount: json["inserted_count"] as? Int ?? 0, delivery: deliveryLine(json)))
+    }
+
+    /// Reads the agent's insertion line leniently: a `delivery` object (`ok`/`can_insert`, `message`/`text`/`summary`, `fix`), or a
+    /// plain `can_insert` flag with `delivery_message` / `delivery_fix`. Anything else, or nothing, means the agent does not say.
+    static func deliveryLine(_ json: [String: Any]) -> DeliveryLine? {
+        func flag(_ object: [String: Any]) -> Bool? {
+            (object["ok"] as? Bool) ?? (object["can_insert"] as? Bool) ?? (object["works"] as? Bool)
+        }
+        func words(_ object: [String: Any], _ keys: [String]) -> String? {
+            keys.compactMap { object[$0] as? String }.first { !$0.isEmpty }
+        }
+        func fallback(_ works: Bool) -> String { works ? "Can actually insert text" : "Cannot insert text" }
+        if let object = json["delivery"] as? [String: Any], let works = flag(object) {
+            return DeliveryLine(works: works, message: words(object, ["message", "text", "summary", "line"]) ?? fallback(works),
+                                fix: words(object, ["fix", "how_to_fix", "remedy"]))
+        }
+        if let works = json["can_insert"] as? Bool {
+            return DeliveryLine(works: works, message: words(json, ["delivery_message", "delivery_line"]) ?? fallback(works),
+                                fix: words(json, ["delivery_fix"]))
+        }
+        return nil
     }
 
     static func describe(_ error: Error) -> String {

@@ -63,7 +63,7 @@ final class TransportRoutingTests: XCTestCase {
         StubURLProtocol.install { _ in (200, json(["ok": true])) }
         let client = ReceiverClient(session: StubURLProtocol.session(), tailnetConnected: { false })
         let (outcome, _) = await client.send(id: UUID(), text: "x", to: URL(string: "http://macbook:7788")!, key: nil)
-        XCTAssertEqual(outcome, .delivered(duplicate: false, macMs: nil))
+        XCTAssertEqual(outcome, .delivered(duplicate: false, macMs: nil, delivery: nil))
     }
 }
 
@@ -98,7 +98,7 @@ final class SocketTransportTests: XCTestCase {
         let port = try XCTUnwrap(listener.port?.rawValue)
         let client = ReceiverClient(addressTransport: SocketTransport(), tailnetConnected: { true })
         let (outcome, _) = await client.send(id: UUID(), text: "Hello, world.", to: URL(string: "http://127.0.0.1:\(port)")!, key: "s3cret")
-        XCTAssertEqual(outcome, .delivered(duplicate: false, macMs: 2))
+        XCTAssertEqual(outcome, .delivered(duplicate: false, macMs: 2, delivery: nil))
         XCTAssertTrue(box.request.hasPrefix("POST /text HTTP/1.1\r\n"))
         XCTAssertTrue(box.request.contains("X-Dictation-Key: s3cret"))
         XCTAssertTrue(box.request.contains("Hello, world."))

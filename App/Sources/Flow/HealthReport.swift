@@ -190,7 +190,12 @@ enum HealthReport {
             return HealthItem(id: id, title: title, level: .warning, detail: "Reachable\(agent), but a password field is focused there.",
                               fix: "Click out of the password field on \(name), then retry.")
         }
-        return HealthItem(id: id, title: title, level: .ok, detail: "Ready\(agent); \(status.insertedCount) texts inserted so far.", fix: nil)
+        if let line = status.delivery, !line.works {
+            return HealthItem(id: id, title: title, level: .problem, detail: "Reachable\(agent), but it cannot actually insert text: \(line.message)",
+                              fix: line.fix ?? "On \(name) run `greenfield-inserter doctor`; it says what is missing.")
+        }
+        let delivery = status.delivery.map { " \($0.message)." } ?? ""
+        return HealthItem(id: id, title: title, level: .ok, detail: "Ready\(agent);\(delivery) \(status.insertedCount) texts inserted so far.", fix: nil)
     }
 
     private static func outbox(_ input: HealthInputs) -> HealthItem {

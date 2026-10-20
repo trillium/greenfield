@@ -21,6 +21,8 @@ struct OutboxItem: Codable, Equatable, Identifiable, Sendable {
     var asrMs: Int?
     var networkMs: Int?
     var macMs: Int?
+    /// The agent's evidence that the text reached the focused field: "confirmed", "unconfirmed", or nil (older agent).
+    var delivery: String?
 
     init(id: UUID = UUID(), text: String, createdAt: Date = Date(), asrMs: Int? = nil) {
         self.id = id
@@ -79,8 +81,9 @@ final class Outbox {
         }
     }
 
-    func markSent(_ id: UUID, networkMs: Int, macMs: Int?, now: Date = Date()) {
+    func markSent(_ id: UUID, networkMs: Int, macMs: Int?, delivery: String? = nil, now: Date = Date()) {
         update(id) {
+            $0.delivery = delivery
             $0.status = .sent
             $0.lastError = nil
             $0.sentAt = now

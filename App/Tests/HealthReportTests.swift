@@ -99,3 +99,52 @@ final class HealthReportTests: XCTestCase {
         XCTAssertTrue(items.contains { $0.id == "computers" && $0.level == .problem })
     }
 }
+
+final class DeliveryLineTests: XCTestCase {
+    private func status(_ extra: [String: Any]) -> ReceiverClient.MacStatus? {
+        var body: [String: Any] = ["ok": true, "name": "mini0", "version": "0.3.0", "accessibility": true]
+        body.merge(extra) { _, new in new }
+        guard case .ready(let status) = ReceiverClient.interpretHealth(status: 200, data: json(body)) else { return nil }
+        return status
+    }
+
+    func testAnOldAgentSaysNothingAboutDelivery() {
+        XCTAssertNil(status([:])?.delivery)
+    }
+
+    func testTheDeliveryObjectIsReadLeniently() {
+        let works = status(["delivery": ["ok": true, "message": "Can actually insert text"]])?.delivery
+        XCTAssertEqual(works, .init(works: true, message: "Can actually insert text", fix: nil))
+        let broken = status(["delivery": ["can_insert": false, "text": "Pasting is blocked", "fix": "Grant Accessibility"]])?.delivery
+        XCTAssertEqual(broken, .init(works: false, message: "Pasting is blocked", fix: "Grant Accessibility"))
+        XCTAssertEqual(status(["can_insert": true])?.delivery?.message, "Can actually insert text")
+        XCTAssertNil(status(["delivery": "weird"])?.delivery)
+    }
+
+    func testHealthShowsTheLineAndItsFixPerComputer() {
+        func item(_ line: ReceiverClient.DeliveryLine?) -> HealthItem {
+            var status = ReceiverClient.MacStatus(name: "mini0", version: "0.3.0")
+            status.delivery = line
+            let computer = HealthInputs.Computer(name: "mini0", address: "mini0.example.ts.net", isActive: true, hasKey: false,
+                                                 answer: .ready(status))
+            return HealthReport.computer(computer)
+        }
+        let good = item(.init(works: true, message: "Can actually insert text", fix: nil))
+        XCTAssertEqual(good.level, .ok)
+        XCTAssertTrue(good.detail.contains("Can actually insert text"))
+        let bad = item(.init(works: false, message: "the paste could not be set up", fix: "Run greenfield-inserter doctor"))
+        XCTAssertEqual(bad.level, .problem)
+        XCTAssertEqual(bad.fix, "Run greenfield-inserter doctor")
+        XCTAssertEqual(item(nil).level, .ok, "absent on old agents: not a problem")
+    }
+
+    @MainActor
+    func testSendEvidenceIsKeptOnTheOutboxItem() {
+        XCTAssertEqual(ReceiverClient.interpret(status: 200, data: json(["ok": true, "delivery": "unconfirmed"])),
+                       .delivered(duplicate: false, macMs: nil, delivery: "unconfirmed"))
+        let outbox = Outbox(url: nil)
+        let id = outbox.add(text: "x").id
+        outbox.markSent(id, networkMs: 5, macMs: nil, delivery: "unconfirmed")
+        XCTAssertEqual(outbox.item(id)?.delivery, "unconfirmed")
+    }
+}

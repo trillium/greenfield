@@ -24,7 +24,7 @@ final class DeliveryServiceTests: XCTestCase {
         let (service, outbox) = (rig.service, rig.outbox)
         let id = outbox.add(text: "Hello").id
         let outcome = await service.deliver(id)
-        XCTAssertEqual(outcome, .delivered(duplicate: false, macMs: 4))
+        XCTAssertEqual(outcome, .delivered(duplicate: false, macMs: 4, delivery: nil))
         XCTAssertEqual(outbox.item(id)?.status, .sent)
         XCTAssertEqual(outbox.item(id)?.macMs, 4)
         XCTAssertEqual(outbox.item(id)?.targetName, "MacBook")

@@ -31,9 +31,9 @@ final class DeliveryService {
         outbox.markAttempt(id, targetName: target.name)
         let (outcome, networkMs) = await client.send(id: id, text: item.text, to: base, key: targets.key(for: target))
         switch outcome {
-        case .delivered(let duplicate, let macMs):
-            outbox.markSent(id, networkMs: networkMs, macMs: macMs)
-            let note = duplicate ? " (already had it)" : ""
+        case .delivered(let duplicate, let macMs, let evidence):
+            outbox.markSent(id, networkMs: networkMs, macMs: macMs, delivery: evidence)
+            let note = (duplicate ? " (already had it)" : "") + (evidence.map { ", \($0)" } ?? "")
             log?.add(.send, "sent to \(target.name) in \(networkMs) ms\(note), \(item.text.count) characters")
         case .refused(let refusal):
             outbox.markFailed(id, reason: refusal.message)

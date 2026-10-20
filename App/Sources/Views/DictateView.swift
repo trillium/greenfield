@@ -248,8 +248,12 @@ struct StatusLine: View {
 
     var body: some View {
         switch item.status {
+        case .sent where item.delivery == "unconfirmed":
+            Label(sentText + ", but the computer could not confirm it landed in a text field",
+                  systemImage: "questionmark.circle.fill").font(.footnote).foregroundStyle(.orange)
         case .sent:
-            Label(sentText, systemImage: "checkmark.circle.fill").font(.footnote).foregroundStyle(.green)
+            Label(sentText + (item.delivery == "confirmed" ? " (confirmed)" : ""), systemImage: "checkmark.circle.fill")
+                .font(.footnote).foregroundStyle(.green)
         case .pending:
             if let error = item.lastError {
                 Label("Queued: \(error)", systemImage: "tray.full.fill").font(.footnote).foregroundStyle(.orange)
