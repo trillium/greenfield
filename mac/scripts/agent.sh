@@ -10,7 +10,9 @@
 # Overrides: LABEL, PREFIX, PORT, GREENFIELD_INSERTER_HOME (mainly for testing), and
 # SIGN_IDENTITY - a code-signing identity name to sign with instead of the default ad-hoc signature.
 # An ad-hoc signature changes with every build, which invalidates the Accessibility approval; a
-# certificate signature keeps the same identity across rebuilds.
+# certificate signature keeps the same identity across rebuilds. SIGNED_BINARY=/path installs that
+# already-signed binary as it is (no build, no re-signing): sign once where the certificate lives, then
+# install the same file on every Mac.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -24,12 +26,17 @@ DOMAIN="gui/$(id -u)"
 
 case "${1:-}" in
 install)
-    swift build -c release >&2
+    if [ -z "${SIGNED_BINARY:-}" ]; then swift build -c release >&2; fi
     mkdir -p "$PREFIX" "$CONFIG_HOME" "$HOME/Library/LaunchAgents"
     chmod 700 "$CONFIG_HOME"
     # launchd needs a stable path, and macOS ties the Accessibility grant to that binary.
-    cp .build/release/greenfield-inserter "$PREFIX/greenfield-inserter.new"
-    codesign --force --sign "${SIGN_IDENTITY:--}" --identifier greenfield-inserter "$PREFIX/greenfield-inserter.new"
+    if [ -n "${SIGNED_BINARY:-}" ]; then
+        cp "$SIGNED_BINARY" "$PREFIX/greenfield-inserter.new"
+        codesign --verify "$PREFIX/greenfield-inserter.new" >&2
+    else
+        cp .build/release/greenfield-inserter "$PREFIX/greenfield-inserter.new"
+        codesign --force --sign "${SIGN_IDENTITY:--}" --identifier greenfield-inserter "$PREFIX/greenfield-inserter.new"
+    fi
     launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
     mv "$PREFIX/greenfield-inserter.new" "$PREFIX/greenfield-inserter"
     cat > "$PLIST" <<PLISTEOF
