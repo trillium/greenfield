@@ -16,10 +16,11 @@ final class StubProbe: SystemProbe {
 final class SpyInserter: TextInserter {
     var inserted: [(String, InsertMethod?)] = []
     var error: Error?
-    func insert(_ text: String, method: InsertMethod?) throws -> InsertMethod {
+    var delivery: Delivery = .confirmed
+    func insert(_ text: String, method: InsertMethod?) throws -> InsertOutcome {
         if let error = error { throw error }
         inserted.append((text, method))
-        return method ?? .paste
+        return InsertOutcome(method: method ?? .paste, delivery: delivery)
     }
 }
 
@@ -236,6 +237,23 @@ final class HandlerTests: XCTestCase {
         let r = post(#"{"id":"a","text":"x"}"#)
         XCTAssertEqual(r.status, 503)
         XCTAssertEqual(object(r)["error"] as? String, "accessibility_not_granted")
+    }
+
+    func testDeliveryEvidenceIsReported() {
+        XCTAssertEqual(object(post(#"{"id":"c1","text":"x"}"#))["delivery"] as? String, "confirmed")
+        inserter.delivery = .unconfirmed
+        XCTAssertEqual(object(post(#"{"id":"c2","text":"x"}"#))["delivery"] as? String, "unconfirmed")
+    }
+
+    func testNotDeliveredIs502AndCanBeRetried() {
+        inserter.error = InsertError.notDelivered
+        let r = post(#"{"id":"nd","text":"x"}"#)
+        XCTAssertEqual(r.status, 502)
+        XCTAssertEqual(object(r)["error"] as? String, "not_delivered")
+        XCTAssertFalse(String(data: r.body, encoding: .utf8)!.contains("\"ok\":true"))
+        inserter.error = nil
+        XCTAssertEqual(post(#"{"id":"nd","text":"x"}"#).status, 200)     // a failure is not cached
+        XCTAssertFalse(logger.lines.joined().contains(" inserted "))
     }
 
     func testInserterFailureIs500() {

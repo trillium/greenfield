@@ -9,26 +9,24 @@ public final class MacInserter: TextInserter {
 
     public init(restoreDelay: TimeInterval = 0.35) { self.restoreDelay = restoreDelay }
 
-    public func insert(_ text: String, method: InsertMethod?) throws -> InsertMethod {
+    public func insert(_ text: String, method: InsertMethod?) throws -> InsertOutcome {
         guard AXIsProcessTrusted() else { throw InsertError.accessibilityNotGranted }
-        switch method {
-        case .type:
-            try typeText(text)
-            return .type
-        case .paste:
-            try paste(text)
-            return .paste
-        case nil:
-            do {
-                try paste(text)
-                return .paste
-            } catch InsertError.accessibilityNotGranted {
-                throw InsertError.accessibilityNotGranted
-            } catch {
-                try typeText(text)
-                return .type
-            }
-        }
+        let flow = InsertionFlow(
+            readFocusedText: { FocusedField.text() },
+            readAfter: { text, before in
+                if before == nil { return nil }       // unreadable field: nothing to wait for
+                // Give the app up to a second to apply the keys; stop as soon as the text shows up.
+                var last = FocusedField.text()
+                for _ in 0..<20 {
+                    if let l = last, l != before, l.contains(text) { break }
+                    Thread.sleep(forTimeInterval: 0.05)
+                    last = FocusedField.text()
+                }
+                return last
+            },
+            paste: { try self.paste($0) },
+            type: { try self.typeText($0) })
+        return try flow.run(text, method: method)
     }
 
     // MARK: paste
@@ -121,4 +119,21 @@ public final class MacInserter: TextInserter {
 
 private extension UTF16 {
     static func isLeadSurrogate(_ u: UInt16) -> Bool { (0xD800...0xDBFF).contains(u) }
+}
+
+
+/// Reads the text of whatever has keyboard focus through the Accessibility API, when the app exposes it.
+public enum FocusedField {
+    public static func text() -> String? {
+        let system = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(system, 0.5)
+        var focused: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+              let element = focused else { return nil }
+        let el = element as! AXUIElement
+        AXUIElementSetMessagingTimeout(el, 0.5)
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, kAXValueAttribute as CFString, &value) == .success else { return nil }
+        return value as? String
+    }
 }

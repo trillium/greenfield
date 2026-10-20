@@ -8,12 +8,14 @@ public enum InsertMethod: String {
 public enum InsertError: Error, Equatable {
     case accessibilityNotGranted
     case failed(String)
+    /// The focused field could be read and the text did not appear in it.
+    case notDelivered
 }
 
 public protocol TextInserter {
-    /// Inserts text at the cursor of the focused app. `method` nil means the default
-    /// (paste, falling back to typed key events).
-    func insert(_ text: String, method: InsertMethod?) throws -> InsertMethod
+    /// Inserts text at the cursor of the focused app. `method` nil means the default (paste,
+    /// falling back to typed key events). The outcome says whether arrival was confirmed.
+    func insert(_ text: String, method: InsertMethod?) throws -> InsertOutcome
 }
 
 public protocol SystemProbe {
@@ -176,14 +178,18 @@ public final class RequestHandler {
         do {
             let used = try inserter.insert(text, method: method)
             insertedCount += 1
-            logger?.log("text id=\(id) source=\(source) inserted chars=\(text.count) method=\(used.rawValue)")
+            logger?.log("text id=\(id) source=\(source) sent chars=\(text.count) method=\(used.method.rawValue) delivery=\(used.delivery.rawValue)")
             let response = HTTPResponse.json(200, [
-                "ok": true, "id": id, "chars": text.count, "method": used.rawValue,
+                "ok": true, "id": id, "chars": text.count, "method": used.method.rawValue,
+                "delivery": used.delivery.rawValue,
             ])
             dedupe.remember(id, response)
             return response
         } catch InsertError.accessibilityNotGranted {
             return .error(503, "accessibility_not_granted", "grant Accessibility to greenfield-inserter in System Settings")
+        } catch InsertError.notDelivered {
+            logger?.log("text id=\(id) source=\(source) not delivered: the focused field did not change")
+            return .error(502, "not_delivered", "the keys were sent but the focused field did not change; nothing was inserted")
         } catch {
             logger?.log("text id=\(id) source=\(source) failed: \(error)")
             return .error(500, "insert_failed", "could not insert the text")

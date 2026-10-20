@@ -140,6 +140,12 @@ public enum InserterClient {
         public var httpStatus: Int?
         public var summary: String
         public var inserted: Bool
+        /// "confirmed" or "unconfirmed" when the daemon said which.
+        public var delivery: String?
+
+        public init(httpStatus: Int?, summary: String, inserted: Bool, delivery: String? = nil) {
+            self.httpStatus = httpStatus; self.summary = summary; self.inserted = inserted; self.delivery = delivery
+        }
     }
 
     public static func sendText(_ text: String, to mac: KnownMac, id: String = UUID().uuidString,
@@ -156,7 +162,14 @@ public enum InserterClient {
     public static func interpretSend(httpStatus: Int, body: Data) -> SendResult {
         let object = (try? JSONSerialization.jsonObject(with: body) as? [String: Any]) ?? [:]
         switch httpStatus {
-        case 200: return SendResult(httpStatus: 200, summary: "inserted (\(object["method"] as? String ?? "?"))", inserted: true)
+        case 200:
+            let method = object["method"] as? String ?? "?"
+            let delivery = object["delivery"] as? String
+            let summary = delivery == "unconfirmed"
+                ? "sent via \(method), arrival unconfirmed (that app does not expose its text)"
+                : "inserted (\(method)\(delivery == "confirmed" ? ", confirmed" : ""))"
+            return SendResult(httpStatus: 200, summary: summary, inserted: true, delivery: delivery)
+        case 502: return SendResult(httpStatus: 502, summary: "not delivered: the focused field did not change", inserted: false)
         case 401: return SendResult(httpStatus: 401, summary: "wrong key for that Mac (the real key, not the key file's contents: `macs show-key ALIAS` on the Mac that ran `macs add`)", inserted: false)
         case 409: return SendResult(httpStatus: 409, summary: "secure input is on - nothing inserted", inserted: false)
         case 423: return SendResult(httpStatus: 423, summary: "screen is locked - nothing inserted", inserted: false)

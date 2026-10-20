@@ -20,7 +20,24 @@ final class SelftestWindow: NSObject, NSTextFieldDelegate {
         field.delegate = self
         window.contentView?.addSubview(field)
         app.setActivationPolicy(.regular)
+        app.mainMenu = SelftestWindow.makeMainMenu()
         app.finishLaunching()
+    }
+
+    /// macOS routes Cmd+V to a text field through the main menu's Paste item, so an app with no
+    /// Edit menu ignores the shortcut. Real apps have one; this test window must too.
+    static func makeMainMenu() -> NSMenu {
+        let main = NSMenu()
+        let appItem = NSMenuItem(); main.addItem(appItem)
+        let appMenu = NSMenu(); appItem.submenu = appMenu
+        appMenu.addItem(withTitle: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let editItem = NSMenuItem(); main.addItem(editItem)
+        let edit = NSMenu(title: "Edit"); editItem.submenu = edit
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        return main
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
@@ -100,6 +117,11 @@ func runSelftest(port: Int, keyFromStdin: String?, simulate: Bool, paths: Insert
     o.textSend = deliver(marker, method: nil)
     if !simulate, o.textSend?.inserted != true { return o }
     o.textArrived = ui.pump(timeout: 3) { ui.contents.contains(marker) }
+    if simulate {
+        // Development aid: can the daemon's Accessibility read-back see what is in this field?
+        let seen = FocusedField.text()
+        FileHandle.standardError.write(Data("simulate: Accessibility read-back of the focused field \(seen == nil ? "UNAVAILABLE" : (seen!.contains(marker) ? "sees the inserted text" : "readable but text missing"))\n".utf8))
+    }
     guard o.textArrived == true else { return o }
 
     o.returnSend = deliver("\n", method: "type")

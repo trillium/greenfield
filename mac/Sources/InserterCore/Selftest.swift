@@ -30,6 +30,10 @@ private func sendFailure(_ id: String, _ title: String, _ r: InserterClient.Send
         return HealthCheck(id, title, .fail, detail: "refused: the screen is locked (HTTP 423)",
             why: "Input cannot be delivered to a locked screen.",
             fix: "Unlock this Mac and run the selftest again.")
+    case 502:
+        return HealthCheck(id, title, .fail, detail: "the daemon sent the keys but saw the focused field stay unchanged (HTTP 502)",
+            why: "The keys did not reach the window: Accessibility may belong to a different binary, or the window lost focus.",
+            fix: "Run `greenfield-inserter doctor`; if Accessibility looks fine, run the selftest again without touching the keyboard.")
     case 503:
         return HealthCheck(id, title, .fail, detail: r.summary,
             why: "Without Accessibility (or a key) the daemon cannot insert anything.",
