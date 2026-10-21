@@ -116,6 +116,12 @@ git -C "$repo" reset -q --hard HEAD~1
 commit "feat(core): add a thing"
 git -C "$repo" merge -q --no-ff -m "Merge side" HEAD 2>/dev/null || true
 check "check-commits passes good commits" 0 run scripts/check-commits.sh base
+git -C "$repo" branch -q second HEAD~1
+printf '# exempt up to here\nsecond\n' > "$repo/.commit-baseline"
+check "check-commits reads .commit-baseline" 0 run scripts/check-commits.sh
+printf 'nope\n' > "$repo/.commit-baseline"
+check "check-commits with an unknown baseline" 2 run scripts/check-commits.sh
+rm "$repo/.commit-baseline"
 check "check-commits with an unknown base" 2 run scripts/check-commits.sh nope
 
 # --- suggest-bump

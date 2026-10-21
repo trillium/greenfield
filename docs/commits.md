@@ -19,8 +19,9 @@ BREAKING CHANGE: what breaks and what to do about it
   `adds` or `adding`), does not end with a period, and the whole first line is at most 72 characters.
 - **breaking** changes are marked with `!` before the colon (`feat(api)!: drop v1`), or by a `BREAKING CHANGE: ...` footer, or both.
 - A body, if any, starts after one blank line.
-- **Merge commits are exempt**, and so is all history before the base branch: `make check-commits` looks only at the commits
-  you are adding.
+- **Merge commits are exempt**, and so is all history before the base: `make check-commits` looks only at the commits you are
+  adding. The base is `BASE=<ref>` if given, else the ref or sha in a `.commit-baseline` file at the repo root, else `main`
+  (then `origin/main`). A repo whose older history does not follow the convention records the last exempt commit there.
 
 The imperative check is a heuristic on the first word (it rejects `-ed`, `-ing` and third-person `-s` forms, with a short list
 of exceptions such as `embed` and `string`). If it rejects a good verb, reword the subject.
@@ -42,7 +43,7 @@ changelog section for the version.
 
 ```
 make hooks            # once per clone: installs the commit-msg hook (never overwrites a hook that is not ours)
-make check-commits    # validate every commit since main (BASE=<ref> to compare against something else); part of make check
+make check-commits    # validate every commit since the base (see above); part of make check
 make test-commit-tooling   # the validator's own tests, good and bad examples
 scripts/check-commit-msg.sh -m "fix(mac): reject empty text"    # try a message
 ```

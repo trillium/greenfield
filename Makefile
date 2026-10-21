@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-BASE ?= main
+BASE ?=
 
 .PHONY: help hooks check check-commits test-commit-tooling test-mac check-parity release-check shell
 help: ## list targets
@@ -8,7 +8,7 @@ help: ## list targets
 hooks: ## enable .githooks and make sure commit-msg runs the commit message validator (never overwrites a foreign hook)
 	@[ -n "$$(git config --local --get core.hooksPath)" ] || git config core.hooksPath .githooks
 	scripts/install-hooks.sh
-check-commits: ## validate every commit message since main (BASE=<ref> to change); history before it is exempt
+check-commits: ## validate every commit message since the base (BASE=<ref>, .commit-baseline or main); older history is exempt
 	scripts/check-commits.sh $(BASE)
 test-commit-tooling: ## tests for the validator, hook installer, check-commits, suggest-bump, env loader and parity check
 	scripts/test-commit-tooling.sh
