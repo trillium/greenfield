@@ -98,7 +98,10 @@ final class AppModel {
 
     static func live() -> AppModel {
         let targets = TargetStore(keys: KeychainKeyStore())
-        targets.seedPresets(Bundle.main.object(forInfoDictionaryKey: "GreenfieldPresetComputers") as? String)
+        // `-ui-test-isolated YES`: the UI tests see the app as a first install, not shaped by this build's preset computers and trainers
+        // or by whatever answers on the local network (see PeerDirectory.startBonjour).
+        let isolated = UserDefaults.standard.bool(forKey: "ui-test-isolated")
+        if !isolated { targets.seedPresets(Bundle.main.object(forInfoDictionaryKey: "GreenfieldPresetComputers") as? String) }
         // `-selftest-fakemic YES`: treat the microphone as running and feed the bus from files (the acceptance scenarios on a phone
         // nobody is speaking to). The detector, rules, buffer, speech model and delivery are all the real ones.
         var machine = ListenMachine()
@@ -108,7 +111,7 @@ final class AppModel {
         if fake { session.attach() }
         return AppModel(session: session, outbox: Outbox(url: Outbox.standardURL), targets: targets,
                         log: EventLog(url: EventLog.standardURL),
-                        presetTrainers: Bundle.main.object(forInfoDictionaryKey: "GreenfieldPresetTrainers") as? String,
+                        presetTrainers: isolated ? nil : Bundle.main.object(forInfoDictionaryKey: "GreenfieldPresetTrainers") as? String,
                         supportLogURL: SupportLog.standardURL, levelsStore: AppLevels.standardStore())
     }
 

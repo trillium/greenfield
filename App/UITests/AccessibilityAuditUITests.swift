@@ -9,7 +9,7 @@ final class AccessibilityAuditUITests: XCTestCase {
 
     private func launch(onboarded: Bool) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments += ["-onboarding.done", onboarded ? "YES" : "NO"]
+        app.launchArguments += ["-onboarding.done", onboarded ? "YES" : "NO", "-ui-test-isolated", "YES"]
         app.launch()
         return app
     }

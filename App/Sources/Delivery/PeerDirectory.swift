@@ -50,7 +50,7 @@ final class PeerDirectory {
 
     /// Starts listening for Bonjour announcements (the system asks for local-network permission the first time).
     func startBonjour() {
-        guard browser == nil else { return }
+        guard browser == nil, !UserDefaults.standard.bool(forKey: "ui-test-isolated") else { return }
         let browser = NWBrowser(for: .bonjour(type: Self.bonjourType, domain: nil), using: .tcp)
         browser.stateUpdateHandler = { [weak self] state in
             let permission = Self.permission(for: state)
