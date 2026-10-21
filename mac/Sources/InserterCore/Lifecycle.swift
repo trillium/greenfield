@@ -69,7 +69,7 @@ public struct UpdateFlow {
 /// The OS side of install, restart and wait. Not unit tested; exercised by `update`, `restart`, `make install`.
 public enum LaunchAgent {
     public static func plistPath(label: String) -> String {
-        FileManager.default.homeDirectoryForCurrentUser.path + "/Library/LaunchAgents/\(label).plist"
+        InserterDefaults.home.path + "/Library/LaunchAgents/\(label).plist"
     }
 
     /// launchctl bootout then bootstrap, so a changed plist or binary is picked up and nothing stale keeps running.

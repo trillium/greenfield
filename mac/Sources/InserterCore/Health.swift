@@ -1,10 +1,15 @@
 import Foundation
 
 public enum InserterDefaults {
+    /// The home directory: $HOME when set (so a throwaway HOME really is separate), else the account's.
+    public static var home: URL {
+        if let h = ProcessInfo.processInfo.environment["HOME"], !h.isEmpty { return URL(fileURLWithPath: h, isDirectory: true) }
+        return FileManager.default.homeDirectoryForCurrentUser
+    }
     public static let port = 47821
     public static let launchdLabel = "local.greenfield.inserter"
     public static var installedBinary: String {
-        FileManager.default.homeDirectoryForCurrentUser.path + "/.local/share/greenfield-inserter/greenfield-inserter"
+        InserterDefaults.home.path + "/.local/share/greenfield-inserter/greenfield-inserter"
     }
 }
 

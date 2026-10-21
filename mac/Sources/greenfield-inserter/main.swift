@@ -24,6 +24,10 @@ usage:
                                               own daemon, read them back; prints PASS or FAIL with the fix
   greenfield-inserter macs selftest ALIAS     run that on another Mac over ssh (see `macs ssh`)
   greenfield-inserter macs ssh ALIAS USER@HOST remember how to ssh to that Mac
+  greenfield-inserter ready                   "am I ready?": says ready, or exactly one next step in plain words (exit 0 only if ready)
+  greenfield-inserter setup [--timeout S] [--no-open] [--no-selftest]
+                                              the guided finish: opens the Accessibility pane, shows a live checklist that turns
+                                              green as each step lands, proves delivery, then prints the add link and QR
   greenfield-inserter link [--no-qr | --dark-terminal]          the greenfield://add link (and a QR code) that adds this Mac to the phone with no typing
   greenfield-inserter version                 the version, commit and binary hash of this file
   greenfield-inserter restart                 bootout + bootstrap the launchd agent; wait until the running build is the installed file
@@ -152,6 +156,79 @@ case "health", "doctor":
         print(formatHealth(label: label, checks: checks))
     }
     exit(isHealthy(checks) ? 0 : 1)
+
+case "ready", "setup":
+    let port = Int(option("--port", in: args) ?? String(InserterDefaults.port)) ?? 0
+    let label = option("--label", in: args) ?? InserterDefaults.launchdLabel
+    let binary = option("--install-to", in: args) ?? InserterDefaults.installedBinary
+    func checks() -> [HealthCheck] { gatherLocalChecks(paths: paths, port: port, label: label, binary: binary) }
+    func addLink() -> String? {
+        let address = TailscaleIdentity().statusData().flatMap(TailnetStatus.parse)?.me.dnsName ?? Tailnet.ipv4()
+        return address.map { AddLink.make(name: macName.current(), address: $0) }
+    }
+
+    if args[0] == "ready" {
+        switch readiness(checks: checks(), bin: binary) {
+        case .ready(let notes):
+            print("Ready." + (notes.isEmpty ? "" : " (Note: " + notes.joined(separator: "; ") + ".)"))
+            exit(0)
+        case .next(let step):
+            print("Not ready yet. Next step: \(step)")
+            exit(1)
+        }
+    }
+
+    // setup: a live checklist that turns green as each step lands
+    let timeout = Double(option("--timeout", in: args) ?? "600") ?? 600
+    let interactive = isatty(1) == 1
+    let started = Date()
+    var drawnLines = 0
+    var lastPlain = ""
+    var raisedPrompt = false, ranSelftest = false
+    print("Setting up Greenfield on \(macName.current()). This screen updates by itself; you do not need to press anything.\n")
+    while true {
+        let current = checks()
+        let rows = setupRows(checks: current)
+        let verdict = readiness(checks: current, bin: binary)
+        let waiting = rows.first { $0.state == .waiting }
+        var headline = "Waiting for you:"
+        if case .next(let step) = verdict { headline = "Next: \(step)" } else { headline = "Everything is in place." }
+        let text = renderSetup(rows: rows, headline: headline)
+        if interactive {
+            if drawnLines > 0 { print("\u{1B}[\(drawnLines)A\u{1B}[J", terminator: "") }
+            print(text); drawnLines = text.split(separator: "\n", omittingEmptySubsequences: false).count
+        } else if text != lastPlain { print(text + "\n"); lastPlain = text }
+
+        if verdict.isReady { break }
+        if waiting?.title == "Accessibility approved", !raisedPrompt {
+            raisedPrompt = true
+            _ = MacSystemProbe.requestAccessibilityPrompt()      // makes macOS list greenfield-inserter and show its prompt
+            if !args.contains("--no-open") {
+                _ = HostInspector.run("/usr/bin/open", ["x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"])
+            }
+        }
+        // Accessibility is in and everything else is fine: prove delivery for real, once.
+        if waiting?.title == "Text really reaches apps", !ranSelftest, !args.contains("--no-selftest") {
+            ranSelftest = true
+            let live = evaluateSelftest(runSelftest(port: port, simulate: false))
+            recordSelftestEvidence(live, ledger: DeliveryLedger(paths: paths))
+            if !selftestPassed(live) { print("\n" + formatSelftest(label: macName.current(), checks: live, simulated: false)); exit(1) }
+            continue
+        }
+        if Date().timeIntervalSince(started) > timeout {
+            if case .next(let step) = verdict { print("\nStill waiting after \(Int(timeout)) seconds. Next step: \(step)") }
+            exit(1)
+        }
+        Thread.sleep(forTimeInterval: 1)
+    }
+    if case .ready(let notes) = readiness(checks: checks(), bin: binary) {
+        print("\nReady." + (notes.isEmpty ? "" : " (Note: " + notes.joined(separator: "; ") + ".)") + " Add this Mac to the phone: open the link below on the phone, or scan the code.\n")
+        if let link = addLink() {
+            print("  \(link)\n")
+            if let qr = terminalQR(link, forDarkTerminal: interactive) { print(qr) }
+        }
+    }
+    exit(0)
 
 case "link":
     let tailscale = TailscaleIdentity()

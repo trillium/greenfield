@@ -52,6 +52,14 @@ The daemon never says it inserted something without evidence: it reads the focus
 after, and reports `unconfirmed` rather than `confirmed` when it cannot see the text. Only successes are remembered for
 de-duplication (15 minutes, 1024 ids), so a refused request can be retried with the same id.
 
+## Onboarding in one command
+
+`mac/install.sh` installs the signed daemon, loads the launchd agent, opens the Accessibility pane and shows a live
+checklist that turns green as each step lands (the daemon restarts itself when the grant arrives, then proves it can type
+into an app), and ends with the add-to-phone link, a QR code and a one-line "ready", or the single next step.
+`greenfield-inserter ready` is the quick "am I ready?": it says ready, or exactly one next step in plain words.
+`install.sh --help` lists the options (`--binary FILE`, `--port`, `--label`, `--prefix`, `--no-open`, `--no-selftest`).
+
 ## Setup on a Mac
 
 ```

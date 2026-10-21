@@ -2,7 +2,15 @@
 SWIFT ?= swift
 PORT  ?= 47821
 
-.PHONY: stamp restart update verify-running version build test run key check health doctor selftest insert-test permissions install uninstall status logs clean
+.PHONY: onboard ready stamp restart update verify-running version build test run key check health doctor selftest insert-test permissions install uninstall status logs clean
+
+# The whole onboarding in one command: install the signed build, start it, guide the Accessibility step, end "ready".
+onboard:
+	./install.sh
+
+# "Am I ready?": ready, or exactly one next step in plain words.
+ready: build
+	.build/release/greenfield-inserter ready
 
 # The daemon's version comes from the git tags (../docs/versioning.md); nothing types it in.
 stamp:

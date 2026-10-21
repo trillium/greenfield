@@ -3,12 +3,12 @@ import Foundation
 /// Reads the facts `doctor` needs from the Mac it runs on. Kept apart from the judging code in
 /// Health.swift so that code can be tested with made-up facts.
 public enum HostInspector {
-    public static func gather(paths: InserterPaths) -> HostFacts {
+    public static func gather(paths: InserterPaths, label: String = InserterDefaults.launchdLabel,
+                              binary: String = InserterDefaults.installedBinary) -> HostFacts {
         let fm = FileManager.default
-        let home = fm.homeDirectoryForCurrentUser.path
-        let plist = "\(home)/Library/LaunchAgents/\(InserterDefaults.launchdLabel).plist"
-        let binary = InserterDefaults.installedBinary
-        let launchd = run("/bin/launchctl", ["print", "gui/\(getuid())/\(InserterDefaults.launchdLabel)"])
+        let home = InserterDefaults.home.path
+        let plist = "\(home)/Library/LaunchAgents/\(label).plist"
+        let launchd = run("/bin/launchctl", ["print", "gui/\(getuid())/\(label)"])
         var pid: Int?
         var state: String?, runs: Int?
         if launchd.status == 0 {
@@ -51,4 +51,15 @@ public enum HostInspector {
         p.waitUntilExit()
         return (p.terminationStatus, String(data: data, encoding: .utf8) ?? "")
     }
+}
+
+/// Everything a local "am I ready?" or "setup" view needs, gathered the same way `doctor` does but without
+/// opening any window or asking other Macs.
+public func gatherLocalChecks(paths: InserterPaths, port: Int, label: String = InserterDefaults.launchdLabel,
+                              binary: String = InserterDefaults.installedBinary) -> [HealthCheck] {
+    let outcome = InserterClient.snapshot(host: "127.0.0.1", port: port, key: nil, path: "/health", timeout: 2)
+    var exe: String?, running: BuildIdentity?, uptime: Int?
+    if case .ok(let s) = outcome { exe = s.executable; running = s.build; uptime = s.uptime }
+    let host = hostChecks(HostInspector.gather(paths: paths, label: label, binary: binary), daemonExecutable: exe, running: running, uptime: uptime)
+    return host + snapshotChecks(outcome, subject: .local(port: port), localVersion: BuildInfo.version)
 }

@@ -22,7 +22,7 @@ public struct InserterPaths {
         if let override = environment["GREENFIELD_INSERTER_HOME"], !override.isEmpty {
             return InserterPaths(directory: URL(fileURLWithPath: override, isDirectory: true))
         }
-        let home = FileManager.default.homeDirectoryForCurrentUser
+        let home = InserterDefaults.home
         return InserterPaths(directory: home.appendingPathComponent(".config/greenfield-inserter", isDirectory: true))
     }
 

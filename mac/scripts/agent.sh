@@ -39,6 +39,9 @@ install)
         codesign --force --sign "${SIGN_IDENTITY:--}" --identifier greenfield-inserter "$NEW"
     fi
     codesign --verify --strict "$NEW" >&2
+    # EXTRA_SERVE_ARGS="--no-bonjour ..." adds words to the daemon's command line (used by tests and throwaway installs)
+    EXTRA_ARGS_XML=""
+    for word in ${EXTRA_SERVE_ARGS:-}; do EXTRA_ARGS_XML="$EXTRA_ARGS_XML<string>$word</string>"; done
     cat > "$PLIST" <<PLISTEOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -49,7 +52,7 @@ install)
     <array>
         <string>$PREFIX/greenfield-inserter</string>
         <string>serve</string>
-        <string>--port</string><string>$PORT</string>
+        <string>--port</string><string>$PORT</string>$EXTRA_ARGS_XML
     </array>
     <key>EnvironmentVariables</key>
     <dict>
@@ -82,8 +85,7 @@ PLISTEOF
         echo "installed $LABEL (binary $INSTALLED, log $LOG)"
         "$INSTALLED" version
         "$INSTALLED" verify-running --port "$PORT" --install-to "$INSTALLED"
-        echo
-        "$INSTALLED" link || true
+        if [ -z "${NO_LINK:-}" ]; then echo; "$INSTALLED" link || true; fi
     else
         rm -f "$NEW"
         echo "install did not verify; see the message above (the previous build was restored if there was one)" >&2
