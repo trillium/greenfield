@@ -53,3 +53,6 @@ mac/Sources/InserterCore/GeneratedVersion.swift
 
 __pycache__/
 *.pyc
+
+# Agent tool scratch output (never source)
+.pi/
