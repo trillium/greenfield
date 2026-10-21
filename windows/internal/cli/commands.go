@@ -81,6 +81,7 @@ func (d *Deps) selftest(args []string) int {
 }
 
 func (d *Deps) runSelftest(port int, checks []health.Check) int {
+	fmt.Fprintln(d.Out, "A small empty window opens and takes the keyboard focus for a few seconds. Do not type or click away.")
 	ledger := &state.DeliveryLedger{File: d.Paths.DeliveryFile(), DaemonStart: time.Time{}, Now: d.Now}
 	n := 0
 	res := selftest.Run(checks, d.SelfField(), selftest.Loopback{Port: port, Timeout: 10 * time.Second}, ledger, func() string {

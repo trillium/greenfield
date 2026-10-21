@@ -67,7 +67,7 @@ func (f *TestField) Open() error {
 		runtime.LockOSThread()
 		defer close(f.done)
 		class, _ := syscall.UTF16PtrFromString("EDIT")
-		title, _ := syscall.UTF16PtrFromString("Greenfield selftest - do not type")
+		title, _ := syscall.UTF16PtrFromString("") // the text of an EDIT window is its caption and its content: start empty
 		hwnd, _, err := procCreateWindowExW.Call(0, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(title)),
 			wsOverlappedWindow|wsVScroll|esMultiline|esAutoVScroll|esWantReturn|wsVisible, 200, 200, 560, 220, 0, 0, 0, 0)
 		if hwnd == 0 {
