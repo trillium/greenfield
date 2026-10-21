@@ -191,8 +191,19 @@ greenfield-inserter macs restart ALIAS       # over ssh (once: macs ssh ALIAS US
 request ids, the source label, character counts and the insertion method. It never records inserted text
 or keys.
 
+## Assist tools (window switcher and trackpad)
+
+The Mac's helper for the phone's window switcher and trackpad. **Off until you turn it on:** `greenfield-inserter assist on` (the
+trackpad has its own switch, `assist pointer on`); `assist off` is the kill switch and closes every pointer session at once. Window titles
+and names are never logged. The pointer path needs a session opened over the authenticated route and a tag on every datagram; the live
+pointer test has not been run (it is blocked until a scratch Mac or VM is approved). Read `docs/assist-pointer.md` before turning the
+pointer on. `make assist` shows what is on; `make assist-check` is the live window check (from Terminal.app on the Mac).
+
+The daemon builds against the shared kit (`KitAssist`) checked out beside this repository (`PARROT_KIT_DIR`, else `../../parrot-kit`,
+else `~/code/parrot-kit`; the same lookup as `scripts/kit-dir.sh`).
+
 ## Development
 
-`swift test` runs the request-handling, HTTP parsing, key store and de-duplication tests. The `testfield`
+`swift test` runs the request-handling, HTTP parsing, key store, de-duplication and assist-tool tests (no test moves a real pointer or changes the focus of a real window). The `testfield`
 target is a window with a text view that mirrors its contents to a file, for checking insertion end to end:
 `swift run testfield --out /tmp/field.txt`.

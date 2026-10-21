@@ -59,6 +59,9 @@ Not used by the phone's sending path; it is how a person (or `make logs`) asks a
 
 `GET /status` adds `logs_available` (bool) and `logs` (`route`, `max_lines`, `max_bytes`). Contract version: this route is additive and ships with the 0.3 line (MINOR bump 0.2 to 0.3, so the app and every daemon move together; `docs/versioning.md`). More: `docs/logs.md`.
 
+## Assist tools (`/assist/...`)
+The window switcher and the trackpad. Not used by the sending path. The wire formats are the shared kit's (`KitAssist`, `docs/assist.md` there); the daemon's side, limits and security model are in `mac/docs/contract.md` and `mac/docs/assist-pointer.md`. `GET /status` adds `assist: {enabled, windows, pointer, capabilities}` (absent on an older daemon: no assist tools). All three routes are off by default on the Mac (404 `assist_off`: hide the tool), refuse a caller that only holds the optional key (403 `assist_need_same_user`), and ship with the 0.4 line (additive, MINOR bump).
+
 ## `POST /text`
 ```json
 { "id": "6F1C2E0A-5B7D-4E8B-9C41-0A2D3B4C5D6E", "text": "Hello, world.", "source": "greenfield" }

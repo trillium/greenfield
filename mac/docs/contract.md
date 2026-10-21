@@ -48,6 +48,29 @@ minute (429 with `Retry-After`). Same authorization as `/status`, except the opt
 `doctor` show "Logs available" (a warning, never a failure). Additive: ships with 0.3 (MINOR bump, so app and daemon stay on one
 line). The log holds ids, counts, lengths, timings, states and error text only (`docs/logs.md` at the repository root).
 
+## Assist tools (`/assist/...`)
+
+The window switcher and the trackpad for the phone's assist tools. The wire formats are the shared kit's (`KitAssist`, its
+`docs/assist.md` and recorded fixtures); the daemon's rules, limits and security model are in `mac/docs/assist-pointer.md`. Additive: ships
+with the 0.4 line (MINOR bump, so app and daemon stay on one line).
+
+| Route | |
+|---|---|
+| `GET /assist/windows[?since=&epoch=]` | apps and windows (most recently used first), or `{format, unchanged, epoch, rev}` |
+| `POST /assist/windows/focus` | `{format, action: app\|window\|previous, appId?, windowId?, rev}` answered `{format, result, reason?, rev, frontmost?}` |
+| `POST /assist/pointer/session` | opens a pointer session: `{session, key, tag, udp{address,port}, idle_timeout_s, max_lifetime_s, capabilities}` |
+
+Everything is **off by default** (`greenfield-inserter assist on`; the pointer has its own switch). Authorization is the tailnet identity as
+for `POST /text`, but a caller that only holds the optional key is refused: 403 `assist_need_same_user`. Statuses: 200 for any answer
+including `declined`, `notFound`, `denied`, `locked` (the body is the truth), 400 a body or query that breaks the contract, 404 `assist_off`
+(off, or this daemon has no such tool: the phone hides it), 405, 409 `secure_input` (the list only), 413 a body over 1024 bytes, 423
+`screen_locked` (the pointer handshake), 426 the version rule, 429 `rate_limited` / `too_many_sessions` (`Retry-After`), 503
+`no_listener`.
+
+`GET /status` adds `assist: {enabled, windows, pointer, capabilities}`: `enabled` is the master switch, `windows` and `pointer` say the
+tool answers right now, `capabilities` is a list of names (`windowTitles`, ...). An older daemon has no `assist` field. Window titles,
+application names and window ids are never logged; the log holds counts and results only.
+
 ## Finding computers (discovery)
 
 A phone needs only one seed; it then lists every compatible Mac.
