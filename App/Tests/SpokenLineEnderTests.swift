@@ -1,3 +1,5 @@
+import ParrotKit
+import KitHealth
 import XCTest
 @testable import DictationApp
 
@@ -38,7 +40,7 @@ final class SpokenLineEnderTests: XCTestCase {
         let delivery = DeliveryService(outbox: outbox, targets: store, client: client)
         let log = EventLog(url: nil)
         delivery.log = log
-        let models = ParrotModelStore(directory: temporaryFile(), bundled: { [] })
+        let models = testStore()
         let flow = FlowController(session: session, delivery: delivery, models: models, ruleStore: RuleStore(defaults: isolatedDefaults()),
                                   log: log, phraseStore: PhraseStore(defaults: isolatedDefaults()))
         return Rig(flow: flow, session: session, outbox: outbox, log: log)

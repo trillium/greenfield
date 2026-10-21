@@ -29,7 +29,7 @@ A Mac that no app has connected to yet is a note, never a failure.
 ## Transport and trust
 - Port: `GREENFIELD_PORT` (the default is in `.env.example`; the phone offers the same default for a computer given without a port). Plain HTTP over the tailnet. The trust boundary is tailnet membership: the agent trusts callers by their tailnet identity, so the app needs no key and the preset computers work out of the box. The app can still send an optional key in the `X-Dictation-Key` header (Computers > Advanced; never in a URL, a log or the repository; kept in the iPhone Keychain, this device only). A 401 is shown as "this computer will not take text from this phone" only when the agent asks for one or refuses the saved one.
 - iOS App Transport Security allows plain http to `*.ts.net` (subdomains included) and to local short names; there is no blanket exception. 100.x tailnet addresses are sent over a plain TCP transport (`HTTPTransport.swift`) because ATS cannot allow an address range. Before sending to a tailnet name or address the app checks that the phone is on the tailnet and says so if it is not.
-- Audio never leaves the phone. Only text is sent.
+- Audio is never sent to a Mac. Only text is. (Sounds recorded under Teach go to the user's own trainer instead, `docs/teach-protocol.md`.)
 
 ## `GET /status`
 Used for the status line and dot beside each computer. The app reads `name`, `version`, `min_client_version`, `app_compatible`, `screen_locked`, `secure_input`, `accessibility` and `inserted_count`:

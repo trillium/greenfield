@@ -1,3 +1,4 @@
+import KitHealth
 import XCTest
 @testable import DictationApp
 
@@ -77,7 +78,7 @@ final class SupportLogTests: XCTestCase {
         XCTAssertFalse(support.isAvailable)
         var input = HealthInputs()
         input.logsAvailable = support.isAvailable
-        let item = HealthReport.build(input).first { $0.id == "logs" }
+        let item = AppHealth.report(input).items.first { $0.id == "logs" }
         XCTAssertEqual(item?.level, .warning)
         XCTAssertNotNil(item?.fix)
     }
@@ -85,7 +86,7 @@ final class SupportLogTests: XCTestCase {
     func testHealthSaysLogsAreAvailable() {
         var input = HealthInputs()
         input.loggedEvents = 12
-        let item = HealthReport.build(input).first { $0.id == "logs" }
+        let item = AppHealth.report(input).items.first { $0.id == "logs" }
         XCTAssertEqual(item?.title, "Logs available")
         XCTAssertEqual(item?.level, .ok)
         XCTAssertTrue(item?.detail.contains("12 events") ?? false)

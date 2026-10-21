@@ -1,4 +1,5 @@
 import Foundation
+import KitHealth
 
 /// Sends outbox items to the selected Mac, one Mac per transcript, never to another one when it fails.
 @MainActor

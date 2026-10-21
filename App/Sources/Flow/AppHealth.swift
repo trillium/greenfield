@@ -1,21 +1,9 @@
 // Plain-language messages, one per line, so they read and edit as sentences.
 // swiftlint:disable line_length
 import Foundation
-
-/// A plain-words check of everything the app depends on, each failure with the fix. Pure: the screen gathers the facts, this decides.
-struct HealthItem: Identifiable, Equatable {
-    enum Level: Int, Comparable {
-        case ok, warning, problem
-        static func < (lhs: Level, rhs: Level) -> Bool { lhs.rawValue < rhs.rawValue }
-    }
-
-    let id: String
-    let title: String
-    let level: Level
-    let detail: String
-    /// What to do about it; nil when nothing is wrong.
-    let fix: String?
-}
+import KitCore
+import KitHealth
+import ParrotKit
 
 struct HealthInputs {
     enum Permission { case granted, denied, undetermined }
@@ -39,6 +27,8 @@ struct HealthInputs {
     var detectorListening = false
     var tailnetConnected = true
     var computers: [Computer] = []
+    /// The trainer lines (reachable, compatible), worded by ParrotKit from what discovery found.
+    var trainerItems: [HealthItem] = []
     var queued = 0
     /// Can the support log be written (so Share logs and `make logs` have something to hand over)? And how many events it holds.
     var logsAvailable = true
@@ -48,19 +38,28 @@ struct HealthInputs {
     var minimumAgent: Semver?
 }
 
-enum HealthReport {
-    static func build(_ input: HealthInputs) -> [HealthItem] {
-        [speech(input), permission(input), microphone(input), detector(input), tailnet(input)]
-            + computers(input) + [outbox(input), logs(input)]
+/// The app's checks, handed to the shared health framework (KitHealth): the facts are gathered into `HealthInputs`, each check decides.
+enum AppHealth {
+    /// The checks, in the order a person meets the problems.
+    static func checks(_ input: HealthInputs) -> [any HealthCheck] {
+        [ClosureHealthCheck(id: "speech", single: { speech(input) }),
+         ClosureHealthCheck(id: "permission", single: { permission(input) }),
+         ClosureHealthCheck(id: "mic", single: { microphone(input) }),
+         ClosureHealthCheck(id: "detector", single: { detector(input) }),
+         ClosureHealthCheck(id: "tailnet", single: { tailnet(input) }),
+         ClosureHealthCheck(id: "computers") { computers(input) },
+         ClosureHealthCheck(id: "trainer") { input.trainerItems },
+         ClosureHealthCheck(id: "outbox", single: { outbox(input) }),
+         ClosureHealthCheck(id: "logs", single: { logs(input) })]
     }
 
-    static func summary(_ items: [HealthItem]) -> String {
-        let problems = items.filter { $0.level == .problem }.count
-        let warnings = items.filter { $0.level == .warning }.count
-        if problems > 0 { return problems == 1 ? "1 thing needs fixing" : "\(problems) things need fixing" }
-        if warnings > 0 { return warnings == 1 ? "Working, 1 thing to look at" : "Working, \(warnings) things to look at" }
-        return "Everything is working"
-    }
+    static func report(_ input: HealthInputs) -> HealthReport { HealthReport.build(checks(input)) }
+
+    /// Worded once for every computer: who has to update and how.
+    static let compatibility = CompatibilityHealth(
+        peerName: "the Mac daemon", selfName: "this app",
+        updatePeerFix: "On %@ install the current greenfield-inserter (`make -C mac install`), then Check again.",
+        updateSelfFix: "Install the newest Greenfield on this phone, then Check again.")
 
     private static func speech(_ input: HealthInputs) -> HealthItem {
         let title = "Speech model (Parakeet)"
@@ -188,17 +187,10 @@ enum HealthReport {
         let (app, minimumAgent, name) = (versions.app, versions.minimumAgent, computer.name)
         let agent = status.version.isEmpty ? "" : " (agent \(status.version))"
         let appText = app.map { "\($0)" } ?? "unknown"
-        let verdict = Compatibility.judge(app: app, agent: status.version, minClient: status.minClientVersion, minimumAgent: minimumAgent)
-        switch verdict {
-        case .updateAgent:
-            return HealthItem(id: id, title: title, level: .problem,
-                              detail: "Update the Mac daemon: it is \(status.version.isEmpty ? "too old to state a version" : "version \(status.version)"), and this app (\(appText)) needs \(minimumAgent.map { "\($0) or newer" } ?? "a newer one") on the same line.",
-                              fix: "On \(name) install the current greenfield-inserter (`make -C mac install`), then Check again.")
-        case .updateApp:
-            return HealthItem(id: id, title: title, level: .problem,
-                              detail: "Update the app: this app is \(appText) and that computer's agent (\(status.version)) needs \(status.minClientVersion.map { "\($0) or newer" } ?? "a newer app").",
-                              fix: "Install the newest Greenfield on this phone, then Check again.")
-        case .compatible: break
+        let verdict = Compatibility.judge(app: app, peer: status.version, peerMinimumOfApp: status.minClientVersion, minimumPeer: minimumAgent)
+        if let line = compatibility.item(id: id, title: title, verdict: verdict, machine: name, appVersion: app, minimumPeer: minimumAgent,
+                                         peerVersion: status.version, peerMinimumOfApp: status.minClientVersion) {
+            return line
         }
         if let view = status.appCompatibility, !view.works {
             return HealthItem(id: id, title: title, level: .warning, detail: "Reachable\(agent). The computer reports: \(view.message)",

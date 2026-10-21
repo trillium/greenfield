@@ -1,4 +1,5 @@
 import Foundation
+import ParrotKit
 import XCTest
 @testable import DictationApp
 
@@ -81,6 +82,11 @@ extension XCTestCase {
         return url
     }
 
+    /// A model store on a temporary folder whose detector check accepts anything and which has an empty built-in model.
+    func testStore() -> ParrotModelStore {
+        ParrotModelStore.app(directory: temporaryFile(), validator: ClosureModelValidator { _, _ in [] }, bundled: { [] })
+    }
+
     func isolatedDefaults() -> UserDefaults {
         let suite = "dictation.tests.\(UUID().uuidString)"
         addTeardownBlock { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
@@ -89,4 +95,4 @@ extension XCTestCase {
 }
 
 /// An agent version on the same line as the app under test, so tests that are not about compatibility keep passing across releases.
-let currentAgentVersion = Compatibility.appVersion?.description ?? "0.0.0"
+let currentAgentVersion = AppVersion.current?.description ?? "0.0.0"

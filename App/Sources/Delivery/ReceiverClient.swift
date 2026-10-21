@@ -219,7 +219,7 @@ struct ReceiverClient: Sendable {
 
     /// Every request says which app version it comes from; the agent remembers the last few clients it has seen.
     static func stamp(_ request: inout URLRequest) {
-        if let version = Compatibility.appVersion { request.setValue(version.description, forHTTPHeaderField: Compatibility.appHeader) }
+        if let version = AppVersion.current { request.setValue(version.description, forHTTPHeaderField: AppVersion.header) }
     }
 
     static func describe(_ error: Error) -> String {

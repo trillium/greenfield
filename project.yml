@@ -22,6 +22,10 @@ packages:
   Moonshine:
     url: https://github.com/moonshine-ai/moonshine-swift.git
     exactVersion: 0.1.5
+  # The shared package for the Parrot layer (model packs, teach flow, trainer), health and onboarding. A local checkout beside this one
+  # (scripts/kit-dir.sh finds it; PARROT_KIT_DIR overrides). docs/teach-protocol.md.
+  ParrotKit:
+    path: ${PARROT_KIT_DIR}
 targets:
   DictationApp:
     type: application
@@ -33,6 +37,18 @@ targets:
         buildPhase: resources
     dependencies:
       - package: FluidAudio
+      - package: ParrotKit
+        product: KitCore
+      - package: ParrotKit
+        product: KitHealth
+      - package: ParrotKit
+        product: KitOnboarding
+      - package: ParrotKit
+        product: KitUI
+      - package: ParrotKit
+        product: ParrotKit
+      - package: ParrotKit
+        product: ParrotKitUI
     settings:
       base:
         SWIFT_OBJC_BRIDGING_HEADER: $(SRCROOT)/App/ParrotCoreBridge.h
@@ -63,6 +79,18 @@ targets:
         buildPhase: none
     dependencies:
       - target: DictationApp
+      - package: ParrotKit
+        product: KitCore
+      - package: ParrotKit
+        product: KitHealth
+      - package: ParrotKit
+        product: KitOnboarding
+      - package: ParrotKit
+        product: KitUI
+      - package: ParrotKit
+        product: ParrotKit
+      - package: ParrotKit
+        product: ParrotKitUI
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES

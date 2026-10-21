@@ -1,4 +1,5 @@
 import Foundation
+import KitCore
 
 /// The reachability dot beside each Mac, from `GET /status`.
 @MainActor
@@ -44,10 +45,9 @@ final class TargetHealth {
 
     /// "Update the Mac daemon" or "Update the app" when the contract's rule fails, else nil.
     static func compatibilityProblem(_ status: ReceiverClient.MacStatus) -> String? {
-        switch Compatibility.judge(app: Compatibility.appVersion, agent: status.version, minClient: status.minClientVersion,
-                                   minimumAgent: Compatibility.minimumAgent) {
-        case .updateAgent: return "Update the Mac daemon (it is \(status.version.isEmpty ? "too old" : status.version))"
-        case .updateApp: return "Update the app (that computer needs a newer one)"
+        switch AppVersion.verdict(for: status) {
+        case .updatePeer: return "Update the Mac daemon (it is \(status.version.isEmpty ? "too old" : status.version))"
+        case .updateSelf: return "Update the app (that computer needs a newer one)"
         case .compatible: return nil
         }
     }

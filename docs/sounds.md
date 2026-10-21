@@ -32,6 +32,9 @@ The detector is a separate library that runs the sound model (`pq_*` C interface
 
 The model is swappable at run time. `ParrotModelStore` keeps installed **model packs** (one file with the model, its sound names and its patterns, checksummed; format in `ParrotModelPack.swift`) and the chosen one; the bundled model is the fallback. Sounds > Import a model pack installs and activates a pack, after loading it in the detector to prove it runs; a pack that fails to load never becomes active. The patterns (which class names make which pattern name, with thresholds) come from the pack, or from the library's built-in set for the bundled model. The rule editor offers the active model's pattern names.
 
+## Teaching your own sounds
+Sounds > Teach your sounds records the user's own sounds on the same microphone tap (the sound rules are held still while a take runs), builds a sound pack, sends it to the user's own trainer over the tailnet, and installs the model that comes back through `ParrotModelStore`: it is switched to at once and the previous model stays installed, with "Go back" on the result. The trainer is found by itself (build preset, the Computers list, tailnet peers); there is nothing to type. The path, the file formats, the endpoints and the states are in [teach-protocol.md](teach-protocol.md) (the flow is the ParrotKit package; this repo's page lists what the app adds). A taught model brings its own pattern names, so rules written for another model's names do not fire until they are edited.
+
 ## Open items
 - Public release: the detector library's pattern engine and the model's provenance are on hold as open decisions (task-pgozj, task-29wjo). Until they are settled, the detector is a local build input, not something this repository ships.
 - Background and locked-screen listening is not done (foreground only), so sounds only work while the app is open.

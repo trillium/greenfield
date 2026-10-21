@@ -16,7 +16,9 @@ final class SelfTest {
         let test = SelfTest(model: model)
         test.removeSelfTestTargets()
         defer { test.removeSelfTestTargets() }
-        if test.defaults.bool(forKey: "selftest-scenarios") {
+        if test.defaults.bool(forKey: "selftest-teach") {
+            await test.runTeach()
+        } else if test.defaults.bool(forKey: "selftest-scenarios") {
             await test.runScenarios()
         } else if test.defaults.bool(forKey: "selftest-health") {
             await test.checkHealth()
@@ -145,8 +147,10 @@ final class SelfTest {
             await model.health.refresh(target)
             say("\(target.name) (\(target.address)): \(model.health.state(for: target).summary)")
         }
+        await model.peers.refresh()
+        await model.trainers.refresh()
         // The Health screen's own report, as the person would read it .
-        for item in model.healthReport() {
+        for item in model.healthReport().items {
             say("HEALTH \(item.level == .ok ? "ok     " : item.level == .warning ? "warning" : "PROBLEM") \(item.title): \(item.detail)"
                 + (item.fix.map { " FIX: \($0)" } ?? ""))
         }
@@ -160,7 +164,7 @@ final class SelfTest {
         if let first = model.targets.targets.first, model.targets.selected == nil { model.targets.select(first.id) }
     }
 
-    private func say(_ line: String) { print("SELFTEST \(line)") }
+    func say(_ line: String) { print("SELFTEST \(line)") }
 
     private func run(wav name: String) async {
         configureTarget()

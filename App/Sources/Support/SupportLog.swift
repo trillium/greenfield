@@ -1,4 +1,6 @@
+import Combine
 import Foundation
+import KitHealth
 
 /// The phone's support log: the Diagnostics event log, the outbox's metadata and the Health summary, redacted, in one file that
 /// `scripts/pull-logs.sh` copies off the phone (no cable needed) and the Share logs button hands to the share sheet.
@@ -14,8 +16,9 @@ final class SupportLog {
     private let outbox: Outbox
     private var info: [String: Any]
     private var saver: Task<Void, Never>?
+    private var following: AnyCancellable?
     /// The Health report, for the last section; set by the app model.
-    var health: (() -> [HealthItem])?
+    var health: (() -> HealthReport)?
     private(set) var lastWriteFailed = false
 
     init(log: EventLog, outbox: Outbox, url: URL?, info: [String: Any] = Bundle.main.infoDictionary ?? [:]) {
@@ -23,7 +26,8 @@ final class SupportLog {
         self.outbox = outbox
         self.url = url
         self.info = info
-        log.onChange = { [weak self] in self?.schedule() }
+        // The event log lives in ParrotKit, so it is followed through its published entries, not through a hook of ours.
+        following = log.$entries.dropFirst().sink { [weak self] _ in self?.schedule() }
         outbox.onChange = { [weak self] in self?.schedule() }
     }
 
@@ -46,7 +50,7 @@ final class SupportLog {
         sections.append(LogBundle.Section(title: "outbox (text is never included, only its length)",
                                           lines: outbox.items.sorted { $0.createdAt < $1.createdAt }.map(Self.line)))
         if let health {
-            sections.append(LogBundle.Section(title: "health", lines: health().map {
+            sections.append(LogBundle.Section(title: "health", lines: health().items.map {
                 "\(LogBundle.stamp(now)) health \($0.id) \(Self.level($0.level)) \($0.detail)"
             }))
         }
@@ -67,7 +71,7 @@ final class SupportLog {
         return "\(LogBundle.stamp(item.createdAt)) " + parts.joined(separator: " ")
     }
 
-    private static func level(_ level: HealthItem.Level) -> String {
+    private static func level(_ level: HealthLevel) -> String {
         switch level {
         case .ok: return "ok"
         case .warning: return "warning"

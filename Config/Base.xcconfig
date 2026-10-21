@@ -20,4 +20,12 @@ GREENFIELD_MIN_PEER_VERSION = 0.2.0
 // Computers the app starts with, "name=tailnet-address name=tailnet-address" (no keys). Set it in the gitignored Local.xcconfig.
 GREENFIELD_PRESET_COMPUTERS =
 
+// Trainers to look for first, "name=tailnet-name[:port] ..." (port 8750 when left out). Computers in the list are tried as well, so this
+// is optional. Set it in the gitignored Local.xcconfig.
+GREENFIELD_PRESET_TRAINERS =
+
+// The trainer's port (python -m parrot_trainer serve). Applied to a bare host and to every computer in the list when looking for a trainer.
+// The kit holds no port number; it is read from Info.plist (ParrotTrainerPort).
+PARROT_TRAINER_PORT = 8750
+
 #include? "Local.xcconfig"

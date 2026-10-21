@@ -1,3 +1,5 @@
+import ParrotKit
+import KitHealth
 import XCTest
 @testable import DictationApp
 
@@ -110,7 +112,7 @@ final class FlowControllerTests: XCTestCase {
         let client = ReceiverClient(session: StubURLProtocol.session(), tailnetConnected: { true })
         let delivery = DeliveryService(outbox: Outbox(url: nil), targets: store, client: client)
         return FlowController(session: DictationSession(transcriber: ParakeetTranscriber()), delivery: delivery,
-                              models: ParrotModelStore(directory: temporaryFile(), bundled: { [] }),
+                              models: testStore(),
                               ruleStore: RuleStore(defaults: isolatedDefaults()))
     }
 
@@ -120,6 +122,18 @@ final class FlowControllerTests: XCTestCase {
         XCTAssertEqual(flow.lastSound?.event.pattern, "hiss")
         XCTAssertNil(flow.lastSound?.firedRule)
         XCTAssertEqual(flow.recentSounds.count, 1)
+    }
+
+    func testRulesAreHeldStillWhileSoundsAreRecordedButTheSoundsAreStillListed() {
+        let flow = controller()
+        flow.setRulesPaused(true)
+        flow.heard([event("kitty-cmere", 1.0), event("kitty-cmere", 1.4)])
+        XCTAssertEqual(flow.recentSounds.count, 2, "still shown")
+        XCTAssertTrue(flow.recentSounds.allSatisfy { $0.firedRule == nil }, "but nothing fires")
+        XCTAssertEqual(flow.state, .idle)
+        flow.setRulesPaused(false)
+        flow.heard([event("kitty-cmere", 5.0), event("kitty-cmere", 5.4)])
+        XCTAssertEqual(flow.recentSounds.first?.firedRule, "kitty-cmere × 2: Idle → Dictating", "and they fire again afterwards")
     }
 
     func testTheRecentListIsBounded() {
@@ -180,7 +194,7 @@ final class EndToEndFlowTests: XCTestCase {
         let outbox = Outbox(url: nil)
         let client = ReceiverClient(session: StubURLProtocol.session(), tailnetConnected: { true })
         let delivery = DeliveryService(outbox: outbox, targets: store, client: client)
-        let models = ParrotModelStore(directory: temporaryFile(), bundled: { [] })
+        let models = testStore()
         let log = EventLog(url: nil)
         delivery.log = log
         let flow = FlowController(session: session, delivery: delivery, models: models, ruleStore: RuleStore(defaults: isolatedDefaults()),
@@ -355,29 +369,5 @@ final class EndToEndFlowTests: XCTestCase {
         session.capture.bus.publish(tone(0.3))
         for _ in 0..<100 where flow.text.isEmpty { try await Task.sleep(for: .milliseconds(20)) }
         XCTAssertEqual(flow.text, "Hello from the test.")
-    }
-}
-
-@MainActor
-final class EventLogTests: XCTestCase {
-    func testNewestFirstAndBounded() {
-        let log = EventLog(url: nil)
-        for index in 0..<(EventLog.capacity + 10) { log.add(.app, "event \(index)") }
-        XCTAssertEqual(log.entries.count, EventLog.capacity)
-        XCTAssertEqual(log.entries.first?.text, "event \(EventLog.capacity + 9)")
-        let last = log.export().split(separator: "\n").last
-        XCTAssertTrue(last?.hasSuffix("event \(EventLog.capacity + 9)") ?? false, "export is oldest first")
-    }
-
-    func testTheLogSurvivesARestart() {
-        let url = temporaryFile()
-        let first = EventLog(url: url)
-        first.add(.send, "sent to MacBook")
-        first.saveNow()
-        let second = EventLog(url: url)
-        XCTAssertEqual(second.entries.map(\.text), ["sent to MacBook"])
-        second.clear()
-        second.saveNow()
-        XCTAssertTrue(EventLog(url: url).entries.isEmpty)
     }
 }

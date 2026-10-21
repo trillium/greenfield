@@ -1,3 +1,5 @@
+import KitHealth
+import ParrotKit
 import XCTest
 @testable import DictationApp
 
@@ -14,6 +16,7 @@ final class HealthReportTests: XCTestCase {
         input.tailnetConnected = true
         input.computers = [.init(name: "mini0", address: "mini0.example.ts.net", isActive: true, hasKey: true,
                                  answer: .ready(ReceiverClient.MacStatus(name: "mini0", version: currentAgentVersion, insertedCount: 3)))]
+        input.trainerItems = trainerItems(answer: .ready(TrainerClient.Health(teaches: true)))
         return input
     }
 
@@ -24,12 +27,18 @@ final class HealthReportTests: XCTestCase {
         return input
     }
 
-    private func item(_ id: String, _ input: HealthInputs) -> HealthItem? { HealthReport.build(input).first { $0.id == id } }
+    private func item(_ id: String, _ input: HealthInputs) -> HealthItem? { AppHealth.report(input).items.first { $0.id == id } }
+
+    /// The lines ParrotKit words from what trainer discovery found; the app only places them in its report.
+    private func trainerItems(answer: TrainerDirectory.Probe) -> [HealthItem] {
+        TrainerHealthReport.lines(candidates: [.init(name: "mini0", isPreset: true, probe: answer)], tailnetConnected: true, port: 8750)
+            .map(\.healthItem)
+    }
 
     func testEverythingWorkingHasNoFixes() {
-        let items = HealthReport.build(healthy())
+        let items = AppHealth.report(healthy()).items
         XCTAssertTrue(items.allSatisfy { $0.level == .ok && $0.fix == nil }, "\(items.filter { $0.level != .ok })")
-        XCTAssertEqual(HealthReport.summary(items), "Everything is working")
+        XCTAssertEqual(AppHealth.report(healthy()).summary(), "Everything is working")
     }
 
     func testEveryProblemCarriesAFix() {
@@ -40,7 +49,7 @@ final class HealthReportTests: XCTestCase {
         input.detectorProblem = "bad model"
         input.tailnetConnected = false
         input.computers = []
-        let problems = HealthReport.build(input).filter { $0.level == .problem }
+        let problems = AppHealth.report(input).items.filter { $0.level == .problem }
         XCTAssertGreaterThanOrEqual(problems.count, 5)
         for problem in problems { XCTAssertNotNil(problem.fix, problem.title) }
         XCTAssertTrue(item("permission", input)?.fix?.contains("Settings > Greenfield") ?? false)
@@ -66,11 +75,11 @@ final class HealthReportTests: XCTestCase {
 
     func testEachComputerStateSaysWhatToDo() {
         func check(_ answer: ReceiverClient.Health?, hasKey: Bool = true) -> HealthItem {
-            HealthReport.computer(.init(name: "macbook", address: "macbook.example.ts.net", isActive: true, hasKey: hasKey, answer: answer))
+            AppHealth.computer(.init(name: "macbook", address: "macbook.example.ts.net", isActive: true, hasKey: hasKey, answer: answer))
         }
         let keyless = check(.ready(ReceiverClient.MacStatus()), hasKey: false)
         XCTAssertEqual(keyless.level, .ok, "a missing key is never a problem")
-        XCTAssertFalse(HealthReport.build(healthyWithoutKeys()).contains { $0.detail.lowercased().contains("no key") })
+        XCTAssertFalse(AppHealth.report(healthyWithoutKeys()).items.contains { $0.detail.lowercased().contains("no key") })
         XCTAssertTrue(check(.wrongKey, hasKey: false).detail.contains("asks for a key"))
         XCTAssertTrue(check(.wrongKey, hasKey: true).fix?.contains("remove the saved key") ?? false)
         XCTAssertTrue(check(.keyNotSetOnMac).fix?.contains("update and restart") ?? false)
@@ -88,15 +97,45 @@ final class HealthReportTests: XCTestCase {
         input.queued = 2
         XCTAssertNotNil(item("active", input))
         XCTAssertTrue(item("outbox", input)?.detail.contains("2 texts") ?? false)
-        XCTAssertTrue(HealthReport.summary(HealthReport.build(input)).contains("need"))
+        XCTAssertTrue(AppHealth.report(input).summary().contains("need"))
     }
 
     @MainActor
     func testTheLiveModelBuildsAReport() {
         let store = TargetStore(defaults: isolatedDefaults(), keys: MemoryKeyStore())
         let model = AppModel(session: DictationSession(transcriber: ParakeetTranscriber()), outbox: Outbox(url: nil), targets: store)
-        let items = model.healthReport()
+        let items = model.healthReport().items
         XCTAssertTrue(items.contains { $0.id == "computers" && $0.level == .problem })
+    }
+
+    // MARK: trainer
+
+    func testTheTrainerLinesSitInTheReportAndAGreenTrainerNeedsNoFix() {
+        let input = healthy()
+        XCTAssertEqual(item("trainer-reachable", input)?.level, .ok)
+        XCTAssertEqual(item("trainer-compatible", input)?.level, .ok)
+    }
+
+    func testATrainerThatDoesNotAnswerIsAWarningWithAFixAndNeverAProblem() throws {
+        var input = healthy()
+        input.trainerItems = trainerItems(answer: .unreachable("The trainer did not answer in time."))
+        for id in ["trainer-reachable", "trainer-compatible"] {
+            let line = try XCTUnwrap(item(id, input))
+            XCTAssertEqual(line.level, .warning, "dictation works without a trainer")
+            XCTAssertNotNil(line.fix, id)
+        }
+        XCTAssertTrue(AppHealth.report(input).problems.isEmpty)
+        XCTAssertTrue(AppHealth.report(input).itemsWithoutAFix.isEmpty)
+    }
+
+    func testTheWholeReportKeepsTheRuleThatEveryFailureSaysWhatToDo() {
+        var input = healthy()
+        input.trainerItems = trainerItems(answer: .ready(TrainerClient.Health(teaches: false)))
+        input.microphonePermission = .denied
+        input.queued = 2
+        let report = AppHealth.report(input)
+        XCTAssertTrue(report.itemsWithoutAFix.isEmpty, "\(report.itemsWithoutAFix)")
+        XCTAssertTrue(report.duplicateIDs.isEmpty, "\(report.duplicateIDs)")
     }
 }
 
@@ -127,7 +166,7 @@ final class DeliveryLineTests: XCTestCase {
             status.delivery = line
             let computer = HealthInputs.Computer(name: "mini0", address: "mini0.example.ts.net", isActive: true, hasKey: false,
                                                  answer: .ready(status))
-            return HealthReport.computer(computer)
+            return AppHealth.computer(computer)
         }
         let good = item(.init(works: true, message: "Can actually insert text", fix: nil))
         XCTAssertEqual(good.level, .ok)

@@ -13,3 +13,6 @@ line_length:
   error: 200
 identifier_name:
   excluded: [n, ok, ts, id, ms, on, to]
+nesting:
+  # A Codable struct nests its CodingKeys, and the pack/manifest types nest their parts: two levels is the natural shape there.
+  type_level: 2

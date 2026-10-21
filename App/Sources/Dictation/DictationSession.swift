@@ -1,4 +1,5 @@
 import Foundation
+import KitHealth
 import Observation
 
 /// Thread-safe holder for the utterance buffer: the audio thread appends, the main actor presses and releases.

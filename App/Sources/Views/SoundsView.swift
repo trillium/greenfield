@@ -1,3 +1,5 @@
+import ParrotKit
+import ParrotKitUI
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -11,6 +13,18 @@ struct SoundsView: View {
         let flow = model.flow
         NavigationStack {
             List {
+                Section {
+                    NavigationLink {
+                        TeachView(model: model.teach)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Teach your sounds").font(.headline)
+                            Text("Record the sounds you want to use; your own trainer makes a model for them.")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityIdentifier("teachLink")
+                }
                 Section("Detector") {
                     LabeledContent("State", value: flow.state.title)
                     LabeledContent("Model", value: flow.modelName.isEmpty ? "Not loaded" : flow.modelName)
@@ -50,9 +64,7 @@ struct SoundsView: View {
     private func importPack(_ result: Result<URL, Error>) {
         do {
             let url = try result.get()
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            let entry = try model.flow.models.install(Data(contentsOf: url))
+            let entry = try model.flow.models.install(contentsOf: url)
             message = "Installed and switched to \(entry.name)."
         } catch {
             message = "Not installed: \(error)"
@@ -86,10 +98,10 @@ struct ModelPackList: View {
     var body: some View {
         let store = model.flow.models
         let entries = store.list()
-        let active = store.activeID
+        let active = store.inUseID
         Group {
             Button { choose(nil) } label: {
-                Label(ParrotModelStore.bundledName, systemImage: active == nil ? "checkmark.circle.fill" : "circle")
+                Label(store.bundledName, systemImage: active == nil ? "checkmark.circle.fill" : "circle")
             }
             ForEach(entries) { entry in
                 Button { choose(entry.id) } label: {

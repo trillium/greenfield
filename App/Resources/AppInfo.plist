@@ -4,6 +4,10 @@
 <dict>
 	<key>GreenfieldPresetComputers</key>
 	<string>$(GREENFIELD_PRESET_COMPUTERS)</string>
+	<key>ParrotTrainerPort</key>
+	<string>$(PARROT_TRAINER_PORT)</string>
+	<key>GreenfieldPresetTrainers</key>
+	<string>$(GREENFIELD_PRESET_TRAINERS)</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_greenfield._tcp</string>
@@ -24,7 +28,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>The camera is only used to scan the code that adds a computer. Nothing is recorded or saved.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>The microphone is used to turn what you say into text. Audio is transcribed on this phone and never leaves it; only the resulting text is sent, to the Mac you choose.</string>
+	<string>The microphone is used to turn what you say into text. Dictation audio is transcribed on this phone and never leaves it; only the resulting text is sent, to the Mac you choose. Sounds you record under Teach go only to your own trainer, and only when you press Train.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Used to send the text you dictate to a Mac on your network.</string>
 	<key>NSAppTransportSecurity</key>

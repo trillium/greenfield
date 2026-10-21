@@ -1,6 +1,8 @@
 // Plain-language messages, one per line, so they read and edit as sentences.
 // swiftlint:disable line_length
 import Foundation
+import KitHealth
+import KitOnboarding
 
 /// What the first-launch checklist and the "Am I ready?" line look at.
 struct OnboardingInputs {
@@ -20,48 +22,35 @@ enum LocalNetworkState: Equatable {
     case unknown, granted, denied
 }
 
-/// What a button on a checklist item does.
-enum OnboardingFix: Equatable {
-    case allowMicrophone, allowLocalNetwork, openSettings, openTailscale, downloadModel, restartDetector, findComputers
+/// What the buttons of this app's checklist do: the names ParrotKit does not already have (the app maps each to an action in `perform`).
+extension OnboardingFix {
+    static let allowLocalNetwork: OnboardingFix = "allowLocalNetwork"
+    static let openTailscale: OnboardingFix = "openTailscale"
+    static let downloadModel: OnboardingFix = "downloadModel"
+    static let restartDetector: OnboardingFix = "restartDetector"
 }
 
-struct OnboardingItem: Identifiable, Equatable {
-    enum State: Equatable {
-        case done
-        /// In progress; the fraction when known.
-        case working(Double?)
-        case todo
-        case blocked
+/// This app's steps, handed to the shared onboarding framework (KitOnboarding): the checklist, the "Am I ready?" line and the
+/// first-launch memory are the kit's. Pure: the screen gathers the facts, this words them.
+enum AppOnboarding {
+    static let strings: OnboardingStrings = {
+        var strings = OnboardingStrings()
+        strings.ready = "Ready. Say kitty-cmere twice, or tap the microphone."
+        return strings
+    }()
+
+    static func onboarding(_ input: OnboardingInputs) -> Onboarding {
+        Onboarding(checks: [
+            ClosureOnboardingCheck(id: "microphone") { microphone(input) },
+            ClosureOnboardingCheck(id: "localnetwork") { localNetwork(input) },
+            ClosureOnboardingCheck(id: "tailscale") { tailscale(input) },
+            ClosureOnboardingCheck(id: "speech") { speech(input) },
+            ClosureOnboardingCheck(id: "detector") { detector(input) },
+            ClosureOnboardingCheck(id: "computer") { computer(input) }
+        ], strings: strings)
     }
 
-    let id: String
-    let title: String
-    let state: State
-    let detail: String
-    /// The one-tap fix and its button label; nil when done or when only waiting helps.
-    let fix: OnboardingFix?
-    let fixLabel: String?
-
-    var isDone: Bool { state == .done }
-}
-
-/// The checklist, in the order a new person meets the problems. Pure: the screen gathers the facts, this words them.
-enum Onboarding {
-    static func checklist(_ input: OnboardingInputs) -> [OnboardingItem] {
-        [microphone(input), localNetwork(input), tailscale(input), speech(input), detector(input), computer(input)]
-    }
-
-    /// The single next step for the main screen's "Am I ready?" line, or nil when everything is ready.
-    static func nextStep(_ input: OnboardingInputs) -> OnboardingItem? {
-        checklist(input).first { !$0.isDone }
-    }
-
-    static func readyLine(_ input: OnboardingInputs) -> (ready: Bool, text: String) {
-        guard let step = nextStep(input) else {
-            return (true, "Ready. Say kitty-cmere twice, or tap the microphone.")
-        }
-        return (false, "Next step: \(step.fixLabel ?? step.title). \(step.detail)")
-    }
+    static func checklist(_ input: OnboardingInputs) -> [OnboardingItem] { onboarding(input).checklist() }
 
     private static func microphone(_ input: OnboardingInputs) -> OnboardingItem {
         switch input.microphone {
@@ -70,7 +59,7 @@ enum Onboarding {
         case .denied:
             return item("microphone", "Microphone", .blocked, "Microphone access is off, so nothing can be heard.", .openSettings, "Open Settings and turn the microphone on")
         case .undetermined:
-            return item("microphone", "Microphone", .todo, "Greenfield listens on this phone only. Nothing leaves it.", .allowMicrophone, "Allow the microphone")
+            return item("microphone", "Microphone", .todo, "Greenfield listens on this phone. What you dictate is never sent as audio.", .allowMicrophone, "Allow the microphone")
         }
     }
 
