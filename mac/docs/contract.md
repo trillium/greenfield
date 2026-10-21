@@ -45,7 +45,7 @@ A phone needs only one seed; it then lists every compatible Mac.
   device of the SAME tailnet user whose daemon answers `GET /status` (`address` is the MagicDNS name, `name` the Mac's own name,
   `version` its daemon version). Only the Mac's own tailnet user (or this Mac) may ask: a device that got in with the optional
   key gets 403 `peers_need_same_user`. The answer is cached for 20 seconds. Fixture: `mac/Tests/Fixtures/peers-two-macs.json`.
-- Bonjour: the daemon advertises `_greenfield._tcp` on port 47821 with TXT records `name`, `address` (the tailnet name to
+- Bonjour: the daemon advertises `_greenfield._tcp` on the daemon's port with TXT records `name`, `address` (the tailnet name to
   connect to: the daemon itself listens only on the tailnet and loopback, so the LAN address Bonjour resolves is not usable),
   `version` and `path=/status`.
 - `greenfield://add?name=<name>&address=<magicdns name>` adds one Mac with no typing. `greenfield-inserter link` prints it and a

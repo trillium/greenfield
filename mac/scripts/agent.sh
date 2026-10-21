@@ -7,6 +7,7 @@
 #   scripts/agent.sh status      show whether launchd is running it
 #   scripts/agent.sh logs        tail the log
 #
+# The port is GREENFIELD_PORT from the environment or the repo's .env (../.env.example); PORT=N overrides it; with none, the default in InserterDefaults.
 # Overrides: LABEL, PREFIX, PORT, GREENFIELD_INSERTER_HOME (mainly for testing), and
 # SIGN_IDENTITY - a code-signing identity name to sign with instead of the default ad-hoc signature.
 # An ad-hoc signature changes with every build, which invalidates the Accessibility approval; a
@@ -18,7 +19,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 LABEL="${LABEL:-local.greenfield.inserter}"
 PREFIX="${PREFIX:-$HOME/.local/share/greenfield-inserter}"
-PORT="${PORT:-47821}"
+# shellcheck source-path=SCRIPTDIR source=../../scripts/load-env.sh
+. ../scripts/load-env.sh
+PORT="${PORT:-${GREENFIELD_PORT:-}}"
 CONFIG_HOME="${GREENFIELD_INSERTER_HOME:-$HOME/.config/greenfield-inserter}"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$CONFIG_HOME/inserter.log"
@@ -39,6 +42,8 @@ install)
         codesign --force --sign "${SIGN_IDENTITY:--}" --identifier greenfield-inserter "$NEW"
     fi
     codesign --verify --strict "$NEW" >&2
+    # No port given by PORT, GREENFIELD_PORT or .env: ask the new build, which knows its own default.
+    [ -n "$PORT" ] || PORT="$("$NEW" port)"
     # EXTRA_SERVE_ARGS="--no-bonjour ..." adds words to the daemon's command line (used by tests and throwaway installs)
     EXTRA_ARGS_XML=""
     for word in ${EXTRA_SERVE_ARGS:-}; do EXTRA_ARGS_XML="$EXTRA_ARGS_XML<string>$word</string>"; done

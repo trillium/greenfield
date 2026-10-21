@@ -11,7 +11,7 @@ public struct KnownMac: Codable, Equatable {
     public var ssh: String?
 
     /// `key` is empty when none was saved: the daemon authorizes by tailnet identity and the key is optional.
-    public init(alias: String, host: String, port: Int = 47821, key: String = "", ssh: String? = nil) {
+    public init(alias: String, host: String, port: Int = InserterDefaults.port, key: String = "", ssh: String? = nil) {
         self.alias = alias; self.host = host; self.port = port; self.key = key; self.ssh = ssh
     }
 
@@ -21,7 +21,7 @@ public struct KnownMac: Codable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         alias = try c.decode(String.self, forKey: .alias)
         host = try c.decode(String.self, forKey: .host)
-        port = try c.decodeIfPresent(Int.self, forKey: .port) ?? 47821
+        port = try c.decodeIfPresent(Int.self, forKey: .port) ?? InserterDefaults.port
         key = try c.decodeIfPresent(String.self, forKey: .key) ?? ""
         ssh = try c.decodeIfPresent(String.self, forKey: .ssh)
     }

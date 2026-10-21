@@ -7,7 +7,7 @@ the phone: no key is typed per computer.
 
 ## HTTP API
 
-Port `47821`.
+The port is `GREENFIELD_PORT`, from the environment or the repo's `.env` (`.env.example` lists the default; `--port N` overrides it). With neither, the default from `.env.example` is used, so a fresh checkout needs no `.env`.
 
 **Who may call (authorization).** The trust boundary is tailnet membership. For each request the daemon asks the
 local Tailscale (`tailscale whois`) who owns the caller's address and accepts it only if that device belongs to the
@@ -63,6 +63,7 @@ into an app), and ends with the add-to-phone link, a QR code and a one-line "rea
 ## Setup on a Mac
 
 ```
+# optional: cp .env.example .env and change GREENFIELD_PORT if the port collides; without .env the default is used
 make -C mac test          # unit tests
 make -C mac key           # OPTIONAL: a key for devices of other tailnet users (shown once)
 make -C mac install       # launchd agent: starts at login, restarts on crash

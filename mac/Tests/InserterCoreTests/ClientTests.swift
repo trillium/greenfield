@@ -63,25 +63,25 @@ final class ClientTests: XCTestCase {
         XCTAssertEqual((attrs[.posixPermissions] as? NSNumber)?.intValue, 0o600)
         try reg.remove("book")
         XCTAssertEqual(reg.load().map(\.alias), ["mini0"])
-        XCTAssertThrowsError(try reg.upsert(KnownMac(alias: "bad alias!", host: "h", key: "k")))
+        XCTAssertThrowsError(try reg.upsert(KnownMac(alias: "bad alias!", host: "h", port: 4001, key: "k")))
     }
 
     func testTableFormatNeverContainsKeys() {
-        let mac = KnownMac(alias: "mini0", host: "h", key: "SECRETKEY")
+        let mac = KnownMac(alias: "mini0", host: "h", port: 4001, key: "SECRETKEY")
         let out = formatReports([MacReport(mac: mac, state: .ready, name: "Mini", version: "0.1.0")])
         XCTAssertTrue(out.contains("mini0")); XCTAssertTrue(out.contains("ready"))
         XCTAssertFalse(out.contains("SECRETKEY"))
     }
 
     func testExposurePolicy() {
-        XCTAssertTrue(isTailnetOrLoopback("100.84.99.99:47821"))
+        XCTAssertTrue(isTailnetOrLoopback("100.84.99.99:4001"))
         XCTAssertTrue(isTailnetOrLoopback("100.127.255.254:1"))
-        XCTAssertTrue(isTailnetOrLoopback("127.0.0.1:47821"))
-        XCTAssertFalse(isTailnetOrLoopback("0.0.0.0:47821"))
-        XCTAssertFalse(isTailnetOrLoopback("192.168.1.5:47821"))
+        XCTAssertTrue(isTailnetOrLoopback("127.0.0.1:4001"))
+        XCTAssertFalse(isTailnetOrLoopback("0.0.0.0:4001"))
+        XCTAssertFalse(isTailnetOrLoopback("192.168.1.5:4001"))
         XCTAssertFalse(isTailnetOrLoopback("100.63.0.1:1"))
         XCTAssertFalse(isTailnetOrLoopback("100.128.0.1:1"))
-        let mac = KnownMac(alias: "m", host: "h", key: "k")
+        let mac = KnownMac(alias: "m", host: "h", port: 4001, key: "k")
         let good = MacReport(mac: mac, state: .ready, name: "m", version: "1", listen: ["100.84.99.99:1", "127.0.0.1:1"])
         let bad = MacReport(mac: mac, state: .ready, name: "m", version: "1", listen: ["100.84.99.99:1", "0.0.0.0:1"])
         XCTAssertFalse(good.needsAttention)

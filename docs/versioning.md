@@ -25,7 +25,7 @@ The source of truth is the git tag `vX.Y.Z`. `scripts/version.sh` reads it with 
 ## Cutting a release
 
 1. Merge the work to `main`.
-2. `make release LEVEL=minor` (or `major` / `patch`; `scripts/release.sh <level> --dry-run` previews). It requires a clean tree, writes `CHANGELOG.md` from Conventional Commit subjects since the last tag ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/)), commits it, and creates the annotated tag.
+2. `make release LEVEL=minor` (or `major` / `patch`; `scripts/cut-release.sh <level> --dry-run` previews). It requires a clean tree, writes `CHANGELOG.md` from Conventional Commit subjects since the last tag ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/)), commits it, and creates the annotated tag.
 3. Pushing the branch and the tag is a manual step; the script only prints it.
 4. `make archive` (signed). Uploading to TestFlight is a separate, manual decision; no script does it.
 

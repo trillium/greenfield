@@ -1,0 +1,14 @@
+# Files that must stay byte-identical between the sibling repos (docs/parity.md).
+# One path per line, relative to the repo root. Project-specific names and ports do not belong in
+# these files: they live in .env.example, the Makefile, release.sh and the xcconfig files.
+scripts/check-commit-msg.sh
+scripts/check-commits.sh
+scripts/install-hooks.sh
+scripts/suggest-bump.sh
+scripts/load-env.sh
+scripts/check-parity.sh
+scripts/parity-manifest.txt
+scripts/test-commit-tooling.sh
+scripts/version.sh
+docs/commits.md
+docs/parity.md

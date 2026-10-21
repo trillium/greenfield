@@ -19,7 +19,9 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 cd "$here"
 binary="${SIGNED_BINARY:-}"
-port="${PORT:-47821}"
+# shellcheck source-path=SCRIPTDIR source=../scripts/load-env.sh
+. "$here/../scripts/load-env.sh"
+port="${PORT:-${GREENFIELD_PORT:-}}"   # empty: the daemon's own default, read back after the install
 label="${LABEL:-local.greenfield.inserter}"
 prefix="${PREFIX:-$HOME/.local/share/greenfield-inserter}"
 config="${GREENFIELD_INSERTER_HOME:-$HOME/.config/greenfield-inserter}"
@@ -73,6 +75,7 @@ fi
 
 export LABEL="$label" PORT="$port" PREFIX="$prefix" GREENFIELD_INSERTER_HOME="$config" NO_LINK=1 EXTRA_SERVE_ARGS="${extra_serve# }"
 scripts/agent.sh install
+[ -n "$port" ] || port="$("$prefix/greenfield-inserter" port)"
 
 if [ "$run_setup" = 1 ]; then
     echo

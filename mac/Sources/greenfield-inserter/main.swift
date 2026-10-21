@@ -36,6 +36,8 @@ usage:
   greenfield-inserter macs restart ALIAS      run `restart` on another Mac over ssh (see `macs ssh`)
   greenfield-inserter permissions             check Accessibility; ask macOS to prompt if missing
 
+port: --port, else GREENFIELD_PORT from the environment, else GREENFIELD_PORT in the nearest .env (see .env.example), else the built-in default
+  greenfield-inserter port                    print the port this Mac uses (what the installer reads)
 environment: GREENFIELD_INSERTER_HOME overrides ~/.config/greenfield-inserter
 """
 
@@ -55,10 +57,21 @@ let paths = InserterPaths.standard()
 let keys = FileKeyStore(paths: paths)
 let macName = MacName(paths: paths)
 
+/// The port from `--port`, the environment, `.env`, else the default in `InserterDefaults`; stops with a hint when it is not a number.
+func configuredPort(_ args: [String]) -> UInt16 {
+    let dotEnv = DotEnv.load(from: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
+    switch DotEnv.port(flag: option("--port", in: args), environment: ProcessInfo.processInfo.environment, dotEnv: dotEnv) {
+    case .success(let port): return port
+    case .failure(let error): fail("\(error)", code: 2)
+    }
+}
+
 switch args.first ?? "serve" {
+case "port":
+    print(configuredPort(args))
+
 case "serve":
-    let port = UInt16(option("--port", in: args) ?? "47821") ?? 0
-    guard port != 0 else { fail("bad --port", code: 2) }
+    let port = configuredPort(args)
     let target: HTTPServer.BindTarget = option("--bind", in: args).map { .address($0) } ?? .tailnet
     let nameOverride = option("--name", in: args)
     try? paths.ensureDirectory()
@@ -126,8 +139,7 @@ case "name":
     }
 
 case "health", "doctor":
-    let port = Int(option("--port", in: args) ?? String(InserterDefaults.port)) ?? 0
-    guard port > 0, port < 65536 else { fail("bad --port", code: 2) }
+    let port = Int(configuredPort(args))
     var outcome = InserterClient.snapshot(host: "127.0.0.1", port: port, key: nil, path: "/health")
     if args[0] == "doctor", !args.contains("--no-selftest"), case .ok = outcome,
        snapshotChecks(outcome, subject: .local(port: port), localVersion: RequestHandler.version)
@@ -158,7 +170,7 @@ case "health", "doctor":
     exit(isHealthy(checks) ? 0 : 1)
 
 case "ready", "setup":
-    let port = Int(option("--port", in: args) ?? String(InserterDefaults.port)) ?? 0
+    let port = Int(configuredPort(args))
     let label = option("--label", in: args) ?? InserterDefaults.launchdLabel
     let binary = option("--install-to", in: args) ?? InserterDefaults.installedBinary
     func checks() -> [HealthCheck] { gatherLocalChecks(paths: paths, port: port, label: label, binary: binary) }
@@ -243,7 +255,7 @@ case "version", "--version", "-v":
     print("greenfield-inserter \(BuildInfo.fullVersion) commit \(BuildInfo.commit) binary \(RunningBuild.sha256Prefix(ofFile: exe) ?? "unknown") build \(BuildInfo.build)")
 
 case "restart", "verify-running", "update":
-    let port = Int(option("--port", in: args) ?? String(InserterDefaults.port)) ?? 0
+    let port = Int(configuredPort(args))
     let label = option("--label", in: args) ?? InserterDefaults.launchdLabel
     let installed = option("--install-to", in: args) ?? InserterDefaults.installedBinary
     let installedSha = LaunchAgent.sha(of: installed)
@@ -313,8 +325,7 @@ case "restart", "verify-running", "update":
     }
 
 case "selftest":
-    let port = Int(option("--port", in: args) ?? String(InserterDefaults.port)) ?? 0
-    guard port > 0, port < 65536 else { fail("bad --port", code: 2) }
+    let port = Int(configuredPort(args))
     let simulate = args.contains("--simulate-delivery")   // development only: proves the window, not delivery
     let observations = runSelftest(port: port, simulate: simulate)
     let checks = evaluateSelftest(observations)
@@ -336,8 +347,7 @@ case "macs":
     switch args.dropFirst().first {
     case "add":
         guard args.count >= 4 else { fail("usage: macs add ALIAS HOST [--port N] [--key | --key-stdin] [--ssh USER@HOST]", code: 2) }
-        let port = Int(option("--port", in: args) ?? "47821") ?? 0
-        guard port > 0, port < 65536 else { fail("bad --port", code: 2) }
+        let port = Int(configuredPort(args))
         var key = ""
         if args.contains("--key-stdin") {
             key = readLine(strippingNewline: true) ?? ""

@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Canon commit-msg: reject default merge messages.
-if head -1 "$1" | grep -qE '^Merge (branch|remote-tracking branch|pull request)'; then
-  echo "error: use a semantic message (type(scope): description), not a default merge message"; exit 1
-fi
+# Validate the commit message (docs/commits.md). A checkout without the validator is let through.
+root="$(git rev-parse --show-toplevel)"
+[ -x "$root/scripts/check-commit-msg.sh" ] || exit 0
+exec "$root/scripts/check-commit-msg.sh" "$1"
