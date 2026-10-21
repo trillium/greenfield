@@ -1,0 +1,72 @@
+{
+  "_comment": "Recorded from the real handler (RECORD_FIXTURES=1). A Windows computer that is ready. HTTP status in _http_status.",
+  "_http_status": 200,
+  "accessibility": true,
+  "accessibility_at_start": true,
+  "app_compatible": {
+    "fix": "",
+    "message": "the newest app seen (0.4.0, 0 seconds ago) is compatible with daemon 0.4.0",
+    "ok": true
+  },
+  "assist": {
+    "capabilities": [],
+    "enabled": false,
+    "pointer": false,
+    "windows": false
+  },
+  "auth": "tailnet",
+  "build": {
+    "binary_sha": "0123456789abcdef",
+    "commit": "abc1234",
+    "started_at": "2027-01-15T08:00:00Z",
+    "version": "0.4.0"
+  },
+  "can_insert": true,
+  "clients": [
+    {
+      "at": "2027-01-15T09:00:00Z",
+      "version": "0.4.0"
+    }
+  ],
+  "delivery": {
+    "at": "2027-01-15T08:00:00Z",
+    "can_insert": true,
+    "fix": "",
+    "message": "text was read back from a field 60 minutes ago by the selftest",
+    "ok": true,
+    "source": "selftest",
+    "state": "ok",
+    "text": "text was read back from a field 60 minutes ago by the selftest"
+  },
+  "delivery_fix": "",
+  "delivery_message": "text was read back from a field 60 minutes ago by the selftest",
+  "evidence": {
+    "at": "2027-01-15T08:00:00Z",
+    "detail": "text was read back from the focused field",
+    "source": "selftest",
+    "state": "ok"
+  },
+  "identity_ok": true,
+  "inserted_count": 0,
+  "key_configured": false,
+  "listen": [
+    "100.64.0.10:47821",
+    "127.0.0.1:47821"
+  ],
+  "logs": {
+    "max_bytes": 262144,
+    "max_lines": 2000,
+    "route": "/logs"
+  },
+  "logs_available": true,
+  "min_client_version": "0.2.0",
+  "name": "Example PC",
+  "ok": true,
+  "platform": "windows",
+  "screen_locked": false,
+  "secure_input": false,
+  "service": "greenfield-inserter",
+  "tailnet_user": "me@example.com",
+  "uptime_s": 3600,
+  "version": "0.4.0"
+}

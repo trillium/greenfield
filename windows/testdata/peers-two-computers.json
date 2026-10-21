@@ -1,0 +1,19 @@
+{
+  "_comment": "GET /peers: this PC and a Mac. HTTP status in _http_status.",
+  "_http_status": 200,
+  "ok": true,
+  "peers": [
+    {
+      "address": "pc.tail1234.ts.net",
+      "name": "This PC",
+      "self": true,
+      "version": "0.4.0"
+    },
+    {
+      "address": "studio.tail1234.ts.net",
+      "name": "Studio Mac",
+      "self": false,
+      "version": "0.4.1"
+    }
+  ]
+}
