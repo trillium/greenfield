@@ -83,3 +83,6 @@ Only a 200 counts as delivered. Everything else keeps the text in the outbox, wh
 
 ## Which computer
 Exactly one computer per submit: the active one, chosen in the Computers tab. The phone never broadcasts and never falls back to another computer when the active one fails.
+
+## A Windows computer
+A Windows computer runs `windows/` (`greenfield-inserter.exe`), which speaks everything on this page unchanged, so the phone treats it like a Mac. What differs (no optional key, no Assist tools, what "Accessibility" and "secure input" mean there, how much it can confirm) is in `docs/windows.md`, with a parity matrix against the Mac daemon.

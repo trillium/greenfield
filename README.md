@@ -25,15 +25,16 @@ Non-speech sounds (tongue clicks, pops, kitty-cmere) start and end dictation thr
 - `App/Sources/Assist`: the Assist tab: the kit's `AssistView` with this app's computer picker, wording and the transports for the daemon contract.
 - `Spike/`: a separate benchmark app comparing Parakeet, WhisperKit and Moonshine on the phone. Results: `docs/spike-dictation.md`.
 - `docs/mac-contract.md`: how the phone talks to the Mac input agent (`greenfield-inserter`, a separate project). `tools/stub-receiver` stands in for it in tests.
+- `windows/`: the same agent for Windows computers (Go, one static `.exe`, `make windows`); `docs/windows.md` has the parity matrix and the checklist for trying it on a real Windows computer. Not yet run on one.
 - `docs/onboarding.md`: the setup a new person follows, Mac and phone, start to finish.
-- `docs/logs.md`, `docs/sounds.md`, `docs/teach-protocol.md`, `docs/attribution.md`, `docs/audio-session.md`, `docs/versioning.md`, `docs/signing.md`.
+- `docs/windows.md`, `docs/logs.md`, `docs/sounds.md`, `docs/teach-protocol.md`, `docs/attribution.md`, `docs/audio-session.md`, `docs/versioning.md`, `docs/signing.md`.
 
 ## Build
 1. `brew install xcodegen swiftlint shellcheck`, and have the shared ParrotKit package checked out beside this repo (`../parrot-kit`; `PARROT_KIT_DIR` overrides; `scripts/kit-dir.sh` finds it)
 2. `make core` stages the sound detector libraries and the bundled model from a sibling parrot-app checkout (git-ignored; see `docs/sounds.md`). Builds run it for you when it is missing.
 3. `make generate` builds the `.xcodeproj` from `project.yml` (never commit it).
 4. `make test` runs the unit tests on a simulator. No Apple account needed.
-5. `make check` is the full gate: shell, lint, secrets, version tests, stub receiver tests, unit tests.
+5. `make check` is the full gate: shell, lint, secrets, version tests, stub receiver tests, unit tests, the Mac daemon, the Windows daemon (needs Go: `brew install go`).
 
 
 To run on a device, copy `Config/Local.xcconfig.example` to `Config/Local.xcconfig` and set `DEVELOPMENT_TEAM`. The speech model (about 0.5 GB) downloads on the first launch and is never in git. Credentials: `docs/signing.md`. Versioning: `docs/versioning.md`.
