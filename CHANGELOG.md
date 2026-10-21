@@ -6,6 +6,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ### Added
 - A Windows input daemon, `windows/` (`greenfield-inserter.exe`, Go, one static file for windows/amd64 and windows/arm64, `make windows`): the same routes, port, JSON and error codes as the Mac daemon, so the phone needs no change. Text is typed with `SendInput` (Unicode key events, every line break a real Return key press); trust is the tailnet identity from the local Tailscale (no key, no password); computers are found by `GET /peers`, local-network discovery and the add link; `health`, `doctor`, `ready` and `selftest` equivalents; the Assist tools answer "not supported". **Not yet run on a real Windows computer**: `docs/windows.md` has the parity matrix, the known limits and a checklist for trying it.
+- An experimental web version, `pwa/` (Dictate, Computers, Help; `make pwa-serve`, `docs/pwa.md`), for testers who do not want to install the app: the browser's speech recognition, line breaks sent as Enter with the return marker shown, a queue with retry, and one-time pairing of a browser with a computer. Both helpers gain the pairing routes (`greenfield-inserter pair`): a short-lived, per-device, revocable token that reaches `/status` and `/text` only. A request that carries a proxy header is no longer taken for the person at that computer. A tailnet-only HTTPS recipe with `tailscale serve` is documented, not run. Not yet tried on a real iPhone.
 
 ## [0.4.0] - 2026-10-21
 

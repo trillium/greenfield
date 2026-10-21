@@ -3,6 +3,14 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: `docs/versioning.md`. The repository has one
 version line; entries here are the daemon's part of each release.
 
+## [Unreleased]
+
+### Added
+- One-time pairing of a browser outside the tailnet (the web app, `docs/pwa.md`): `greenfield-inserter pair` shows a code that works once for 5 minutes; the browser exchanges it (`POST /pair`) for a token that lasts 24 hours, belongs to one device, can be revoked (`pair --list`, `--revoke ID`, `--revoke-all`) and reaches `/status` and `/text` only. Codes and tokens are kept in memory, never logged. Additive routes: a MINOR change at the next release.
+
+### Changed
+- A request that carries a proxy header (`X-Forwarded-For`, `Forwarded`, `Tailscale-User-Login`, ...) is no longer treated as coming from this Mac when its TCP peer is loopback: it needs a paired device's token. Requests without one are judged exactly as before.
+
 ## [0.4.0] - 2026-10-21
 
 ### Added

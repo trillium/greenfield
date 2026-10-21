@@ -26,6 +26,7 @@ Non-speech sounds (tongue clicks, pops, kitty-cmere) start and end dictation thr
 - `Spike/`: a separate benchmark app comparing Parakeet, WhisperKit and Moonshine on the phone. Results: `docs/spike-dictation.md`.
 - `docs/mac-contract.md`: how the phone talks to the Mac input agent (`greenfield-inserter`, a separate project). `tools/stub-receiver` stands in for it in tests.
 - `windows/`: the same agent for Windows computers (Go, one static `.exe`, `make windows`); `docs/windows.md` has the parity matrix and the checklist for trying it on a real Windows computer. Not yet run on one.
+- `pwa/`: an experimental web version (Dictate, Computers, Help) for testers who do not want to install the app; `make pwa-serve`, `docs/pwa.md`. Unlike the phone app, the browser's speech recognizer may send audio to the browser's maker.
 - `docs/onboarding.md`: the setup a new person follows, Mac and phone, start to finish.
 - `docs/windows.md`, `docs/logs.md`, `docs/sounds.md`, `docs/teach-protocol.md`, `docs/attribution.md`, `docs/audio-session.md`, `docs/versioning.md`, `docs/signing.md`.
 
