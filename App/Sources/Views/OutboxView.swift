@@ -29,7 +29,7 @@ struct OutboxView: View {
                         Button("Retry all unsent", systemImage: "arrow.clockwise") { Task { await model.delivery.resendAll() } }
                             .disabled(model.outbox.pending.isEmpty)
                         Button("Clear sent", systemImage: "trash", role: .destructive) { model.outbox.clearSent() }
-                    } label: { Image(systemName: "ellipsis.circle") }
+                    } label: { Label("More", systemImage: "ellipsis.circle") }
                 }
             }
         }

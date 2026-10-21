@@ -118,7 +118,11 @@ struct TargetRow: View {
                     Text(state.summary).font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
-                if target.id == model.targets.selectedID { Image(systemName: "checkmark").foregroundStyle(.tint) }
+                if target.id == model.targets.selectedID {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(.tint)
+                        .accessibilityLabel("Selected")
+                }
             }
         }
         .accessibilityElement(children: .combine)

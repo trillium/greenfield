@@ -248,6 +248,7 @@ struct DictationButton: View {
                 Image(systemName: active ? "stop.fill" : "mic.fill")
                     .font(.system(size: 54, weight: .semibold))
                     .foregroundStyle(.white)
+                    .accessibilityHidden(true)
                 if busy && !active { ProgressView().tint(.white).offset(y: 70) }
             }
             .frame(width: 180, height: 180)

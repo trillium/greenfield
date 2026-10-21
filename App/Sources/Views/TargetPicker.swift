@@ -25,7 +25,7 @@ struct TargetPicker: View {
                         HealthDot(state: model.health.state(for: selected))
                         Text("To: \(selected.name)").font(.headline)
                     }
-                    Image(systemName: "chevron.up.chevron.down").font(.caption)
+                    Image(systemName: "chevron.up.chevron.down").font(.caption).accessibilityHidden(true)
                     Spacer()
                 }
             }
