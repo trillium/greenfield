@@ -12,7 +12,7 @@ cd "$ROOT"
 [ -z "$(git status --porcelain)" ] || die "working tree is not clean; commit or stash first"
 [ "$dry" = "--dry-run" ] || [ "$(git rev-parse --abbrev-ref HEAD)" = main ] || die "releases are cut from main (use --dry-run to preview)"
 
-last="$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' 2>/dev/null || true)"
+last="$("$ROOT/scripts/version.sh" --tag)"
 base="${last#v}"; base="${base:-0.0.0}"
 IFS=. read -r maj min pat <<EOT
 $base
