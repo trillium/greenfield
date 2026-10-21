@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+# Validate the commit message (docs/commits.md). A checkout without the validator is let through.
+root="$(git rev-parse --show-toplevel)"
+[ -x "$root/scripts/check-commit-msg.sh" ] || exit 0
+exec "$root/scripts/check-commit-msg.sh" "$1"
