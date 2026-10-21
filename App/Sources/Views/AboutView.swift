@@ -14,10 +14,12 @@ struct AboutView: View {
                     LabeledContent("Speech model", value: ModelInfo.modelName)
                     LabeledContent("Where it runs", value: "On this phone")
                 }
-                Section("Support") {
+                Section {
                     NavigationLink("Get ready: the setup checklist") { OnboardingView(model: model) {} }
                     NavigationLink("Health: is everything set up?") { HealthView(model: model) }
                     NavigationLink("Diagnostics: recent events") { SupportDiagnosticsView(log: log, support: model.support) }
+                } header: {
+                    Text("Support").accessibilityAddTraits(.isHeader)
                 }
                 Section("Licences") {
                     NavigationLink("Attribution") { AttributionView() }

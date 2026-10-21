@@ -140,6 +140,11 @@ struct ModelStatusLine: View {
             }
         }
         .accessibilityElement(children: .combine)
+        .onChange(of: state) { _, newValue in
+            if case .ready = newValue {
+                UIAccessibility.post(notification: .announcement, argument: "Speech model is ready")
+            }
+        }
     }
 
     static func text(for state: DictationSession.ModelState) -> String {
@@ -273,6 +278,9 @@ struct DictationButton: View {
         .accessibilityLabel(active ? "Stop dictation" : "Start dictation")
         .accessibilityHint("Tap to \(active ? "stop and write the text into the box" : "start recording")")
         .accessibilityValue(active ? "Dictating" : "Idle")
+        .onChange(of: active) { _, newValue in
+            UIAccessibility.post(notification: .announcement, argument: newValue ? "Started dictating" : "Stopped dictating")
+        }
     }
 }
 

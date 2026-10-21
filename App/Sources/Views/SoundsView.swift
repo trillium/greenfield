@@ -25,6 +25,7 @@ struct SoundsView: View {
                         }
                     }
                     .accessibilityIdentifier("teachLink")
+                    .accessibilityHint("Opens the teach screen")
                 }
                 Section("Detector") {
                     LabeledContent("State", value: flow.state.title)
@@ -39,12 +40,13 @@ struct SoundsView: View {
                 }
                 Section("Rules") {
                     NavigationLink("Edit rules (\(flow.rules.count))") { RulesView(flow: flow) }
+                        .accessibilityHint("Opens the rules list")
                     ForEach(flow.rules.filter(\.enabled)) { Text($0.summary + " (\($0.action.title))").font(.footnote) }
                 }
                 Section {
                     PhraseList(flow: flow)
                 } header: {
-                    Text("Spoken line-enders")
+                    Text("Spoken line-enders").accessibilityAddTraits(.isHeader)
                 } footer: {
                     Text("Saying one of these at the very end of what you dictate ends dictation and submits the text, without "
                          + "the phrase. Matched on the last words only, ignoring case. A sentence that really ends with the phrase "
@@ -53,6 +55,7 @@ struct SoundsView: View {
                 Section("Model packs") {
                     ModelPackList(model: model, message: $message)
                     Button("Import a model pack…", systemImage: "square.and.arrow.down") { importing = true }
+                        .accessibilityHint("Choose a model pack file to add")
                     if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
                 }
                 Section("Sounds heard") {
@@ -78,11 +81,15 @@ struct SoundsView: View {
 
 struct SoundRow: View {
     let sound: FlowController.HeardSound
+    /// Adapt the row to Dynamic Type: at accessibility sizes the pattern wraps instead of clipping
+    /// the percentage, since the HStack reserves width for the trailing value.
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text(sound.event.pattern).font(.headline)
+                    .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
                 Spacer()
                 Text("\(Int((sound.event.probability * 100).rounded()))%").font(.subheadline.monospacedDigit())
             }
@@ -111,10 +118,12 @@ struct ModelPackList: View {
             Button { choose(nil) } label: {
                 Label(store.bundledName, systemImage: active == nil ? "checkmark.circle.fill" : "circle")
             }
+            .accessibilityHint("Switches to the bundled model on this phone")
             ForEach(entries) { entry in
                 Button { choose(entry.id) } label: {
                     Label(entry.name, systemImage: active == entry.id ? "checkmark.circle.fill" : "circle")
                 }
+                .accessibilityHint("Switches to this model")
                 .swipeActions { Button("Remove", role: .destructive) { removingID = entry.id } }
             }
         }
@@ -153,12 +162,15 @@ struct PhraseList: View {
             ForEach($phrases) { $phrase in
                 VStack(alignment: .leading) {
                     WordToggle(title: phrase.text.isEmpty ? "New phrase" : phrase.text, isOn: $phrase.enabled)
+                        .accessibilityHint("Switches this line-ender on or off")
                     TextField("Phrase", text: $phrase.text).textInputAutocapitalization(.never).autocorrectionDisabled()
                 }
             }
             .onDelete { phrases.remove(atOffsets: $0) }
             Button("Add a phrase", systemImage: "plus") { phrases.append(PhraseStore.Phrase(text: "")) }
+                .accessibilityHint("Adds a new line-ender phrase")
             Button("Reset to defaults", systemImage: "arrow.counterclockwise", role: .destructive) { confirmReset = true }
+                .accessibilityHint("Resets the line-enders to the factory defaults")
         }
         .onAppear { phrases = flow.phrases }
         .onChange(of: phrases) { _, new in flow.setPhrases(new) }

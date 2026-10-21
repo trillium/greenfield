@@ -73,15 +73,19 @@ struct OutboxRow: View {
             Button("Retry", systemImage: "arrow.clockwise") { model.resend(item.id) }.disabled(item.status == .sent)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityActions {
-            Button("Copy") { UIPasteboard.general.string = item.text }
-            if item.status == .pending { Button("Retry") { model.resend(item.id) } }
-        }
+        .accessibilityAction(named: "Copy") { UIPasteboard.general.string = item.text }
+        .accessibilityAction(named: "Retry") { if item.status == .pending { model.resend(item.id) } }
+        .accessibilityAction(named: "Delete") { confirmDelete = true }
         .confirmationDialog("Delete this transcript?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { model.outbox.remove(item.id) }
             Button("Keep it", role: .cancel) { }
         } message: {
             Text("It is taken off this phone. This cannot be undone.")
+        }
+        .onChange(of: item.status) { _, newStatus in
+            if newStatus == .sent {
+                UIAccessibility.post(notification: .announcement, argument: "Sent to \(destination)")
+            }
         }
     }
 }

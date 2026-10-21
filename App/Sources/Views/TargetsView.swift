@@ -101,7 +101,7 @@ struct TrainerRows: View {
                     .accessibilityElement(children: .combine)
                 }
             } header: {
-                Text("Trainer")
+                Text("Trainer").accessibilityAddTraits(.isHeader)
             } footer: {
                 Text("Trains models for Sounds > Teach your sounds. Found by itself; nothing to set up here.")
             }
