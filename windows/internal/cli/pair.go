@@ -106,7 +106,7 @@ func (d *Deps) pair(args []string) int {
 		}
 		minutes, _ := answer["expires_in_s"].(float64)
 		fmt.Fprintf(d.Out, "Pairing code for %v:\n\n    %v\n\n", answer["name"], answer["code"])
-		fmt.Fprintf(d.Out, "Type it into the Greenfield web app (Computers > Add computer) within %d minutes. It works once.\n", int(minutes)/60)
+		fmt.Fprintf(d.Out, "Type it into the Greenfield web app (Computers > Pair) within %d minutes. It works once.\n", int(minutes)/60)
 		fmt.Fprintln(d.Out, "The browser gets a token for 24 hours that only sends text; `greenfield-inserter pair --list` shows it, `--revoke ID` ends it.")
 	}
 	return 0

@@ -196,7 +196,7 @@ case "pair":
 
             \(answer.body["code"] as? String ?? "?")
 
-        Type it into the Greenfield web app (Computers > Add computer) within \(minutes) minutes. It works once.
+        Type it into the Greenfield web app (Computers > Pair) within \(minutes) minutes. It works once.
         The browser gets a token for 24 hours that only sends text; `greenfield-inserter pair --list` shows it, `--revoke ID` ends it.
         """)
     }
