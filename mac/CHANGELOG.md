@@ -3,6 +3,17 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: `docs/versioning.md`. The repository has one
 version line; entries here are the daemon's part of each release.
 
+## [0.3.0] - unreleased
+
+### Added
+- `GET /logs`: the daemon's own recent log, redacted, for this Mac and devices of its tailnet user (not the optional key), with
+  limits (2000 lines, 256 KiB, 6 requests a minute) and `format=text` for curl. `greenfield-inserter logs` and `macs logs ALIAS`
+  show the same page, `GET /status` reports `logs_available`, and `health`/`doctor` show a "Logs available" line. MINOR bump: the
+  app and the daemon move to the 0.3 line together. See `docs/logs.md`.
+
+### Changed
+- Request logging keeps caller-controlled values (ids, source labels, unknown paths) to a shape that cannot carry text.
+
 ## [0.2.3] - 2026-10-20
 
 ### Added

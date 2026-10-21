@@ -102,7 +102,7 @@ case "serve":
                                  identity: tailscale, record: DeliveryLedger(paths: paths), clients: ClientLedger(paths: paths), discovery: discovery, logger: logger,
                                  logSource: FileLogSource(file: paths.logFile))
     logger.log("starting \(RequestHandler.serviceName) \(RequestHandler.version) name=\(nameOverride ?? macName.current())")
-    logger.log("authorization: loopback, same tailnet user\(keys.isConfigured ? ", or the optional key" : "") (no key needed)")
+    logger.log("who may call: loopback, same tailnet user\(keys.isConfigured ? ", or the optional key" : "") (no key needed)")
     if !MacSystemProbe().accessibilityTrusted { logger.log("Accessibility not granted; run `greenfield-inserter permissions`") }
     if !args.contains("--no-bonjour") {
         // the service record carries the tailnet name, because the daemon is not reachable on the LAN itself

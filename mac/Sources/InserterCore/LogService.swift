@@ -8,10 +8,14 @@ public struct LogQuery: Equatable {
 
     public var tail: Int
     public var since: TimeInterval?
+    /// `format=text` answers plain lines (for curl and the pull script) instead of JSON.
+    public var plainText = false
 
-    public init(tail: Int = LogQuery.defaultTail, since: TimeInterval? = nil) { self.tail = tail; self.since = since }
+    public init(tail: Int = LogQuery.defaultTail, since: TimeInterval? = nil, plainText: Bool = false) {
+        self.tail = tail; self.since = since; self.plainText = plainText
+    }
 
-    /// `tail=N` (1...2000) and `since=30m` (a number and s, m, h or d; at most 7 days). Anything else is an error in plain words.
+    /// `tail=N` (1...2000), `since=30m` (a number and s, m, h or d; at most 7 days) and `format=json|text`. Anything else is an error in plain words.
     public static func parse(query: String) -> Result<LogQuery, LogQueryError> {
         var result = LogQuery()
         for pair in query.split(separator: "&") {
@@ -26,6 +30,9 @@ public struct LogQuery: Equatable {
                     return .failure(LogQueryError("since must look like 90s, 30m, 2h or 1d, and be at most 7d"))
                 }
                 result.since = seconds
+            case "format":
+                guard kv[1] == "json" || kv[1] == "text" else { return .failure(LogQueryError("format must be json or text")) }
+                result.plainText = kv[1] == "text"
             default:
                 return .failure(LogQueryError("unknown parameter \(LogSafe.token(String(kv[0])))"))
             }

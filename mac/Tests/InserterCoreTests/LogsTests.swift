@@ -90,7 +90,7 @@ final class LogsTests: XCTestCase {
     // MARK: limits
 
     func testSizeIsCappedAndNewestLinesWin() {
-        let long = String(repeating: "x", count: 380)
+        let long = String(repeating: "ab ", count: 126)
         let text = (0..<2000).map { "2026-10-20T10:00:00Z entry \($0) \(long)" }.joined(separator: "\n") + "\n"
         try? text.write(to: file, atomically: true, encoding: .utf8)
         let r = get(makeHandler(), "tail=2000")
@@ -232,6 +232,17 @@ final class LogsTests: XCTestCase {
         }
         guard case .failed(let old) = InserterClient.interpretLogs(httpStatus: 404, body: Data("{}".utf8), alias: "m") else { return XCTFail() }
         XCTAssertTrue(old.contains("predates"))
+    }
+
+    func testPlainTextFormatForCurl() {
+        try? "2026-10-20T10:00:00Z one token=\(tokenValue)\n".write(to: file, atomically: true, encoding: .utf8)
+        let r = get(makeHandler(), "format=text&tail=5")
+        XCTAssertEqual(r.status, 200)
+        XCTAssertTrue(r.headers["Content-Type"]?.hasPrefix("text/plain") ?? false)
+        let text = String(data: r.body, encoding: .utf8) ?? ""
+        XCTAssertTrue(text.contains("one token=<redacted>\n"))
+        XCTAssertFalse(text.contains(tokenValue))
+        XCTAssertEqual(get(makeHandler(), "format=xml").status, 400)
     }
 
     func testQueryParsing() {

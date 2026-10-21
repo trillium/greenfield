@@ -221,6 +221,11 @@ public final class RequestHandler {
         }
         let page = LogPage.build(lines: source.read(query, now: now()), query: query)
         logger?.log("logs served lines=\(page.lines.count) bytes=\(page.bytes) truncated=\(page.truncated)")
+        if query.plainText {
+            return HTTPResponse(status: 200, headers: ["Content-Type": "text/plain; charset=utf-8", "X-Logs-Truncated": String(page.truncated),
+                                                       "X-Logs-Count": String(page.lines.count)],
+                                body: Data((page.lines.map { $0 + "\n" }.joined()).utf8))
+        }
         return .json(200, [
             "ok": true, "service": RequestHandler.serviceName, "version": version, "name": name(),
             "generated_at": ISO8601DateFormatter().string(from: now()),

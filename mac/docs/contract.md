@@ -37,6 +37,17 @@ answers now carry `delivery` and can be 502.
 Other statuses of `POST /text`: 401 (a device of a different tailnet user, or a wrong key), 409 `secure_input`, 423
 `screen_locked`, 502 `not_delivered`, 503 `accessibility_not_granted` or `identity_unavailable`.
 
+## Logs (`GET /logs`)
+
+`GET /logs?tail=N&since=30m&format=json|text` returns this Mac's daemon log, redacted, newest last: `{ok, name, version,
+generated_at, tail, since_s, count, bytes, truncated, lines[]}`, or the bare lines with `format=text`. `tail` is 1 to 2000 (default
+200), `since` up to 7 days, the answer at most 256 KiB (oldest lines dropped, `truncated: true`), at most 6 answered requests a
+minute (429 with `Retry-After`). Same authorization as `/status`, except the optional key does not open it (403
+`logs_need_same_user`), and no `X-Greenfield-App` gate (a Mac with a mismatched app still gives its logs). An unknown parameter is
+400, a missing log file 404 `no_log`. `GET /status` reports `logs_available` and `logs{route,max_lines,max_bytes}`; `health` and
+`doctor` show "Logs available" (a warning, never a failure). Additive: ships with 0.3 (MINOR bump, so app and daemon stay on one
+line). The log holds ids, counts, lengths, timings, states and error text only (`docs/logs.md` at the repository root).
+
 ## Finding computers (discovery)
 
 A phone needs only one seed; it then lists every compatible Mac.

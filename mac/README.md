@@ -29,6 +29,12 @@ delivery line: `can_insert` (true only when text was recently read back from a r
 `delivery_fix`, the same inside a `delivery` object `{ok, can_insert, state, message, text, fix, at, source}`, and the
 raw `evidence`. `GET /health` is the same plus `pid`/`executable` but answers only requests from this Mac.
 
+`GET /logs?tail=N&since=30m[&format=text]` returns the daemon's own recent log lines, redacted (ids, counts, lengths, timings, states
+and error text; never inserted text or keys): at most 2000 lines and 256 KiB, 6 requests a minute, this Mac and devices of its
+tailnet user only (the optional key does not open it). `greenfield-inserter logs --tail N` prints the same page locally (also with
+the daemon stopped) and `macs logs ALIAS` fetches it from another Mac; `make logs` at the repository root pulls every source.
+See `../docs/logs.md`.
+
 `POST /text` with a JSON body:
 
 | field    | notes |
