@@ -196,6 +196,6 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(notice.contains("CC BY 4.0"))
         XCTAssertTrue(notice.contains("Core ML"), "the conversion is a stated change")
         XCTAssertEqual(ModelInfo.modelLicenceURL.absoluteString, "https://creativecommons.org/licenses/by/4.0/")
-        XCTAssertTrue(ModelInfo.credits.contains { $0.name == "FluidAudio" && $0.licence.contains("Apache") })
+        XCTAssertTrue(AppCredits.credits().contains { $0.name == "FluidAudio" && $0.licenceName.contains("Apache") })
     }
 }
