@@ -107,6 +107,17 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: $(PRODUCT_BUNDLE_IDENTIFIER).tests
         HEADER_SEARCH_PATHS: ["$(inherited)", "$(SRCROOT)/.parrot-core/include"]
+  DictationAppUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - App/UITests
+    dependencies:
+      - target: DictationApp
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: $(PRODUCT_BUNDLE_IDENTIFIER).uitests
   DictationSpike:
     type: application
     platform: iOS
@@ -141,7 +152,7 @@ schemes:
       targets:
         DictationApp: all
     test:
-      targets: [DictationAppTests]
+      targets: [DictationAppTests, DictationAppUITests]
     archive:
       config: Release
   DictationSpike:

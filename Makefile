@@ -2,7 +2,7 @@ SHELL := /bin/bash
 BASE ?=
 SCRIPT_FILES := $(wildcard scripts/*.sh) $(wildcard mac/scripts/*.sh) mac/install.sh $(wildcard tools/*/*.sh) $(wildcard .githooks/*)
 
-.PHONY: help logs test-kit-version test-pull-logs hooks check-commits test-commit-tooling test-mac check-parity release-check doctor generate build device-compile test archive archive-unsigned version release test-version check lint shell secrets hooks stub-receiver stub-receiver-test spike-build spike-audio core clean
+.PHONY: help logs test-ui test-kit-version test-pull-logs hooks check-commits test-commit-tooling test-mac check-parity release-check doctor generate build device-compile test archive archive-unsigned version release test-version check lint shell secrets hooks stub-receiver stub-receiver-test spike-build spike-audio core clean
 help: ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/'
 
@@ -18,6 +18,8 @@ device-compile: ## iphoneos-SDK compile check, signing disabled
 	scripts/build.sh --device
 test: ## unit tests on an iOS simulator
 	scripts/test.sh
+test-ui: ## the accessibility audit (Apple's performAccessibilityAudit) on every tab and the first-run screen, on an iOS simulator
+	scripts/test-ui.sh
 version: ## print the version derived from git tags
 	@scripts/version.sh --full; scripts/version.sh
 release: ## cut a release: make release LEVEL=major|minor|patch (see docs/versioning.md)
@@ -31,7 +33,7 @@ archive: ## signed release archive (needs Apple signing; see docs/signing.md)
 archive-unsigned: ## unsigned archive: proves it compiles, cannot be uploaded
 	SIGNING=none scripts/archive.sh
 
-check: shell lint secrets test-version test-kit-version stub-receiver-test test test-mac test-pull-logs check-commits test-commit-tooling $(if $(SIBLING),check-parity) ## the single green gate (phone, Mac, commit messages); must pass at every commit
+check: shell lint secrets test-version test-kit-version stub-receiver-test test test-ui test-mac test-pull-logs check-commits test-commit-tooling $(if $(SIBLING),check-parity) ## the single green gate (phone, Mac, commit messages); must pass at every commit
 shell: ## syntax + shellcheck
 	@for f in $(SCRIPT_FILES); do bash -n "$$f" || exit 1; done
 	shellcheck -x $(SCRIPT_FILES)
