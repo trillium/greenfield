@@ -36,6 +36,8 @@ generate_project() {
   require_tool xcodegen "brew install xcodegen"
   [ -f "$ROOT/.parrot-core/device/libparrot_core.a" ] || "$ROOT/scripts/fetch-core.sh"  # detector libraries and model, git-ignored
   "$ROOT/scripts/version.sh" --write  # stamp every build from git tags; no hand edits
+  PARROT_KIT_DIR="$("$ROOT/scripts/kit-dir.sh")"  # the shared ParrotKit package, a local checkout
+  export PARROT_KIT_DIR
   (cd "$ROOT" && xcodegen generate --quiet)
 }
 

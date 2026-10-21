@@ -1,4 +1,5 @@
 import Foundation
+import KitHealth
 import XCTest
 @testable import DictationApp
 
@@ -130,11 +131,11 @@ final class NoTypingAsksTests: XCTestCase {
     }
 
     func testNoHealthItemAsksForTypingAnything() {
-        let items = everyState().flatMap { HealthReport.build($0) }
+        let items = everyState().flatMap { AppHealth.report($0).items }
             + everyAnswer().flatMap { answer -> [HealthItem] in
-                [HealthReport.computer(.init(name: "macbook", address: "macbook.example.ts.net", isActive: true,
+                [AppHealth.computer(.init(name: "macbook", address: "macbook.example.ts.net", isActive: true,
                                             hasKey: true, answer: answer)),
-                 HealthReport.computer(.init(name: "macbook", address: "macbook.example.ts.net", isActive: true,
+                 AppHealth.computer(.init(name: "macbook", address: "macbook.example.ts.net", isActive: true,
                                             hasKey: false, answer: answer))]
             }
         XCTAssertGreaterThan(items.count, 40, "the matrix must cover the report, not one state of it")
@@ -148,14 +149,14 @@ final class NoTypingAsksTests: XCTestCase {
     func testTheNoComputerFixNamesTheInstallerAndNotAForm() {
         var input = HealthInputs()
         input.computers = []
-        let item = HealthReport.build(input).first { $0.id == "computers" }
+        let item = AppHealth.report(input).items.first { $0.id == "computers" }
         XCTAssertEqual(item?.fix, "Run mac/install.sh on the Mac, then leave this app open: the computer turns up here on its own.")
         XCTAssertEqual(item?.level, .problem)
     }
 
     func testAWrongKeyIsFixedOnTheMacOrByRemovingASavedOne() {
         let named = { (hasKey: Bool) in
-            HealthReport.computer(.init(name: "macbook", address: "macbook.example.ts.net", isActive: true,
+            AppHealth.computer(.init(name: "macbook", address: "macbook.example.ts.net", isActive: true,
                                        hasKey: hasKey, answer: .wrongKey))
         }
         let saved = named(true)

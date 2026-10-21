@@ -1,34 +1,14 @@
+import KitCore
+import KitHealth
 import XCTest
 @testable import DictationApp
-
-final class SemverTests: XCTestCase {
-    func testParsingIgnoresBuildMetadataAndALeadingV() {
-        XCTAssertEqual(Semver("0.2.0"), Semver(0, 2, 0))
-        XCTAssertEqual(Semver("v1.4.12+3.gabc1234.dirty"), Semver(1, 4, 12))
-        for bad in [nil, "", "1.2", "1.2.3.4", "a.b.c", "1.2.x", "-1.0.0", "0.1.0-rc1"] { XCTAssertNil(Semver(bad), bad ?? "nil") }
-    }
-
-    func testOrdering() {
-        XCTAssertLessThan(Semver(0, 1, 9), Semver(0, 2, 0))
-        XCTAssertLessThan(Semver(0, 9, 9), Semver(1, 0, 0))
-        XCTAssertGreaterThan(Semver(1, 0, 10), Semver(1, 0, 9))
-    }
-
-    func testTheRuleBeforeAndAfterOneDotZero() {
-        XCTAssertTrue(Semver(0, 2, 0).isCompatible(with: Semver(0, 2, 7)), "0.x: minor matches, patch free")
-        XCTAssertFalse(Semver(0, 2, 0).isCompatible(with: Semver(0, 3, 0)), "0.x: a different minor is breaking")
-        XCTAssertFalse(Semver(0, 2, 0).isCompatible(with: Semver(1, 2, 0)))
-        XCTAssertTrue(Semver(1, 0, 0).isCompatible(with: Semver(1, 5, 3)), "1.x: major matches, minor free")
-        XCTAssertFalse(Semver(1, 5, 0).isCompatible(with: Semver(2, 5, 0)))
-    }
-}
 
 final class CompatibilityVerdictTests: XCTestCase {
     private let app = Semver(0, 2, 1)
     private let floor = Semver(0, 2, 0)
 
     private func verdict(agent: String?, minClient: String? = nil, app: Semver? = nil) -> Compatibility.Verdict {
-        Compatibility.judge(app: app ?? self.app, agent: agent, minClient: minClient, minimumAgent: floor)
+        Compatibility.judge(app: app ?? self.app, peer: agent, peerMinimumOfApp: minClient, minimumPeer: floor)
     }
 
     func testMatchingLineIsCompatible() {
@@ -37,40 +17,40 @@ final class CompatibilityVerdictTests: XCTestCase {
     }
 
     func testAnAgentThatStatesNoVersionOrTooOldNeedsAnUpdate() {
-        XCTAssertEqual(verdict(agent: nil), .updateAgent)
-        XCTAssertEqual(verdict(agent: "garbage"), .updateAgent)
-        XCTAssertEqual(verdict(agent: "0.1.0"), .updateAgent, "below this app's declared minimum")
+        XCTAssertEqual(verdict(agent: nil), .updatePeer)
+        XCTAssertEqual(verdict(agent: "garbage"), .updatePeer)
+        XCTAssertEqual(verdict(agent: "0.1.0"), .updatePeer, "below this app's declared minimum")
     }
 
     func testAnAgentFromANewerLineMeansTheAppIsBehind() {
-        XCTAssertEqual(verdict(agent: "0.3.0"), .updateApp)
-        XCTAssertEqual(verdict(agent: "1.0.0"), .updateApp)
+        XCTAssertEqual(verdict(agent: "0.3.0"), .updateSelf)
+        XCTAssertEqual(verdict(agent: "1.0.0"), .updateSelf)
     }
 
     func testTheAgentsMinimumClientWins() {
-        XCTAssertEqual(verdict(agent: "0.2.5", minClient: "0.2.4"), .updateApp, "app 0.2.1 is below the agent's minimum")
+        XCTAssertEqual(verdict(agent: "0.2.5", minClient: "0.2.4"), .updateSelf, "app 0.2.1 is below the agent's minimum")
     }
 
     func testAnUnknownAppVersionIsNotBlamedForAnything() {
-        XCTAssertEqual(Compatibility.judge(app: nil, agent: "0.9.0", minClient: "5.0.0", minimumAgent: floor), .compatible)
+        XCTAssertEqual(Compatibility.judge(app: nil, peer: "0.9.0", peerMinimumOfApp: "5.0.0", minimumPeer: floor), .compatible)
     }
 
     func testABuildBelowItsOwnFloorDoesNotBlameTheAgent() {
         // An untagged checkout stamps the app 0.0.1 while the floor still says 0.2.0: the two Macs and phones that
         // ship from the same tree are the same age, so neither is told to update.
-        XCTAssertEqual(Compatibility.judge(app: Semver(0, 0, 1), agent: "0.0.1", minClient: nil, minimumAgent: floor), .compatible)
-        XCTAssertEqual(Compatibility.judge(app: Semver(0, 1, 9), agent: "0.1.4", minClient: nil, minimumAgent: Semver(0, 2, 0)),
+        XCTAssertEqual(Compatibility.judge(app: Semver(0, 0, 1), peer: "0.0.1", peerMinimumOfApp: nil, minimumPeer: floor), .compatible)
+        XCTAssertEqual(Compatibility.judge(app: Semver(0, 1, 9), peer: "0.1.4", peerMinimumOfApp: nil, minimumPeer: Semver(0, 2, 0)),
                        .compatible)
     }
 
     func testTheFloorStillSpeaksForABuildAtOrAboveIt() {
-        XCTAssertEqual(Compatibility.judge(app: Semver(0, 2, 0), agent: "0.1.0", minClient: nil, minimumAgent: floor), .updateAgent)
-        XCTAssertEqual(Compatibility.judge(app: Semver(0, 3, 0), agent: "0.1.0", minClient: nil, minimumAgent: floor), .updateAgent)
+        XCTAssertEqual(Compatibility.judge(app: Semver(0, 2, 0), peer: "0.1.0", peerMinimumOfApp: nil, minimumPeer: floor), .updatePeer)
+        XCTAssertEqual(Compatibility.judge(app: Semver(0, 3, 0), peer: "0.1.0", peerMinimumOfApp: nil, minimumPeer: floor), .updatePeer)
     }
 
     func testTheLiveAppDeclaresAMinimumAndKnowsItsVersion() {
-        XCTAssertNotNil(Compatibility.minimumAgent, "GREENFIELD_MIN_PEER_VERSION must reach Info.plist")
-        XCTAssertNotNil(Compatibility.appVersion, "the app's version comes from the git tag, never typed in")
+        XCTAssertNotNil(AppVersion.minimumAgent, "GREENFIELD_MIN_PEER_VERSION must reach Info.plist")
+        XCTAssertNotNil(AppVersion.current, "the app's version comes from the git tag, never typed in")
     }
 }
 
@@ -89,7 +69,7 @@ final class CompatibilityWireTests: XCTestCase {
         _ = await client.peers(of: base, key: nil)
         XCTAssertEqual(StubURLProtocol.requests.count, 3)
         for request in StubURLProtocol.requests {
-            let sent = request.value(forHTTPHeaderField: Compatibility.appHeader)
+            let sent = request.value(forHTTPHeaderField: AppVersion.header)
             XCTAssertNotNil(Semver(sent), "\(request.url?.path ?? "") sent \(sent ?? "nothing")")
         }
     }
@@ -154,7 +134,7 @@ final class CompatibilityHealthTests: XCTestCase {
         status.appCompatibility = view
         let computer = HealthInputs.Computer(name: "macbook", address: "macbook.example.ts.net", isActive: true, hasKey: false,
                                              answer: .ready(status))
-        return HealthReport.computer(computer, app: Semver(0, 2, 1), minimumAgent: Semver(0, 2, 0))
+        return AppHealth.computer(computer, app: Semver(0, 2, 1), minimumAgent: Semver(0, 2, 0))
     }
 
     func testCompatibleIsSaidPlainly() {
@@ -169,7 +149,7 @@ final class CompatibilityHealthTests: XCTestCase {
         XCTAssertTrue(old.detail.contains("Update the Mac daemon"))
         XCTAssertTrue(old.fix?.contains("make -C mac install") ?? false)
         let behind = item(agent: "0.3.0")
-        XCTAssertTrue(behind.detail.contains("Update the app"))
+        XCTAssertTrue(behind.detail.contains("Update this app"))
         XCTAssertTrue(behind.fix?.contains("newest Greenfield") ?? false)
         XCTAssertTrue(item(agent: nil).detail.contains("too old to state a version"))
     }

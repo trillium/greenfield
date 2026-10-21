@@ -1,6 +1,6 @@
 # Greenfield (working name)
 
-An iPhone dictation app: tap a button (or make a sound), speak, and the text is transcribed on the phone by NVIDIA's Parakeet speech model, then sent over your private network to the Mac you choose. No audio leaves the phone. SwiftUI, iOS 17+, MIT.
+An iPhone dictation app: tap a button (or make a sound), speak, and the text is transcribed on the phone by NVIDIA's Parakeet speech model, then sent over your private network to the Mac you choose. Dictation audio never leaves the phone. SwiftUI, iOS 17+, MIT.
 
 **New here? Start with [docs/onboarding.md](docs/onboarding.md): the whole setup on a Mac and an iPhone, in order, in plain words, ending in text appearing in a document on your Mac.**
 
@@ -10,23 +10,24 @@ Non-speech sounds (tongue clicks, pops, kitty-cmere) start and end dictation thr
 
 ## What it does
 - **Dictate**: the screen shows the flow state (Idle, Dictating, Review), the last sound heard and a text box. Default rules: kitty-cmere twice starts dictation (also again when text is already in the box, which adds to its end); a tongue click ends it and writes the text into the box; another tongue click submits it to the active computer. The microphone button taps to start and taps to stop, on the same state.
-- **Sounds**: live list of every sound the detector recognises, the rule editor, and model packs (install, switch, remove).
+- **Sounds**: live list of every sound the detector recognises, the rule editor, and model packs (install, switch, remove). **Teach your sounds** guides you through recording your own sounds (background noise, talking, silence, then each sound, about 41 s each), sends them to your own trainer on the tailnet, and installs and switches to the model that comes back, keeping the previous one (`docs/teach-protocol.md`). The trainer is found by itself; nothing is typed.
 - **Outbox**: every submitted text is kept until a computer has it, with its target and the plain reason it is waiting, and a Retry button; the same id is reused, so a Mac that already typed it will not type it twice.
-- **Computers**: the Macs this phone can send to, found by themselves (Bonjour on the local network, the tailnet, or the QR code a Mac shows) with a reachability dot each. Computers on your tailnet are trusted by tailnet identity, so there is nothing to type and no secret to keep. Text goes to exactly one Mac, the selected one. An **Advanced** row at the bottom is the only place in the app with a field you can type into, and the normal flow never needs it.
+- **Computers**: the Macs this phone can send to, found by themselves (Bonjour on the local network, the tailnet, or the QR code a Mac shows) with a reachability dot each. Computers on your tailnet are trusted by tailnet identity, so there is nothing to type and no secret to keep. Text goes to exactly one Mac, the selected one. A trainer found on the tailnet is listed below them. An **Advanced** row at the bottom is the only place in the app with a field you can type into, and the normal flow never needs it.
 - **Help**: Health (checks everything and says how to fix it), Diagnostics (recent events), About and Attribution: credit for the speech model and libraries (CC BY 4.0 and Apache-2.0).
 
 ## Layout
 - `App/Sources/Audio`: the microphone. One `AVAudioEngine` tap (`AudioCapture`) publishes 16 kHz mono PCM on a `SampleBus` so several consumers can share it. Also an energy `Endpointer`, the `ListenMachine` state machine, `BackgroundGrace` and `CaptureHeartbeat`.
 - `App/Sources/Parrot`, `App/Sources/Flow`: the sound detector, model packs and store, the rules and the flow controller.
+- `App/Sources/Teach`: this app's side of teach your sounds (microphone, trainer transport). The flow itself, the model pack and store, health and onboarding frameworks are the shared `ParrotKit` package, a path dependency in `project.yml`.
 - `App/Sources/Dictation`: hold to talk (`DictationSession`, `UtteranceBuffer`) and the speech model (`ParakeetTranscriber`, through FluidAudio).
 - `App/Sources/Delivery`: Macs, keys, outbox, the HTTP client and delivery.
 - `Spike/`: a separate benchmark app comparing Parakeet, WhisperKit and Moonshine on the phone. Results: `docs/spike-dictation.md`.
 - `docs/mac-contract.md`: how the phone talks to the Mac input agent (`greenfield-inserter`, a separate project). `tools/stub-receiver` stands in for it in tests.
 - `docs/onboarding.md`: the setup a new person follows, Mac and phone, start to finish.
-- `docs/sounds.md`, `docs/attribution.md`, `docs/audio-session.md`, `docs/versioning.md`, `docs/signing.md`.
+- `docs/sounds.md`, `docs/teach-protocol.md`, `docs/attribution.md`, `docs/audio-session.md`, `docs/versioning.md`, `docs/signing.md`.
 
 ## Build
-1. `brew install xcodegen swiftlint shellcheck`
+1. `brew install xcodegen swiftlint shellcheck`, and have the shared ParrotKit package checked out beside this repo (`../parrot-kit`; `PARROT_KIT_DIR` overrides; `scripts/kit-dir.sh` finds it)
 2. `make core` stages the sound detector libraries and the bundled model from a sibling parrot-app checkout (git-ignored; see `docs/sounds.md`). Builds run it for you when it is missing.
 3. `make generate` builds the `.xcodeproj` from `project.yml` (never commit it).
 4. `make test` runs the unit tests on a simulator. No Apple account needed.

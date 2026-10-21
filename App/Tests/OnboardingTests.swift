@@ -1,3 +1,4 @@
+import KitOnboarding
 import XCTest
 @testable import DictationApp
 
@@ -39,15 +40,15 @@ final class OnboardingTests: XCTestCase {
     }
 
     func testEverythingDoneIsReady() {
-        XCTAssertTrue(Onboarding.checklist(ready()).allSatisfy(\.isDone))
-        XCTAssertTrue(Onboarding.readyLine(ready()).ready)
+        XCTAssertTrue(AppOnboarding.checklist(ready()).allSatisfy(\.isDone))
+        XCTAssertTrue(AppOnboarding.onboarding(ready()).readyLine().ready)
     }
 
     func testTheReadyLineNamesExactlyOneNextStepInOrder() {
         var input = ready()
         input.tailnetConnected = false
         input.speechModel = .downloading(0.5)
-        let line = Onboarding.readyLine(input)
+        let line = AppOnboarding.onboarding(input).readyLine()
         XCTAssertFalse(line.ready)
         XCTAssertTrue(line.text.contains("Tailscale"), line.text)
         XCTAssertFalse(line.text.contains("Speech model"), "only the first step is shown")
@@ -57,18 +58,18 @@ final class OnboardingTests: XCTestCase {
         var input = OnboardingInputs()
         input.microphone = .denied
         input.speechModel = .downloading(0.2)
-        for item in Onboarding.checklist(input) where !item.isDone {
+        for item in AppOnboarding.checklist(input) where !item.isDone {
             if case .working = item.state { continue }
             XCTAssertNotNil(item.fix, item.title)
             XCTAssertNotNil(item.fixLabel, item.title)
         }
-        XCTAssertEqual(Onboarding.checklist(input).first?.fix, .openSettings, "a denied microphone goes to Settings")
+        XCTAssertEqual(AppOnboarding.checklist(input).first?.fix, .openSettings, "a denied microphone goes to Settings")
     }
 
     func testTheModelItemShowsProgress() {
         var input = ready()
         input.speechModel = .downloading(0.42)
-        let item = Onboarding.checklist(input).first { $0.id == "speech" }
+        let item = AppOnboarding.checklist(input).first { $0.id == "speech" }
         XCTAssertEqual(item?.state, .working(0.42))
         XCTAssertTrue(item?.detail.contains("42%") ?? false)
     }
@@ -80,12 +81,12 @@ final class OnboardingTests: XCTestCase {
     }
 
     func testTheChecklistOrderIsTheOrderANewPersonMeetsTheProblems() {
-        XCTAssertEqual(Onboarding.checklist(OnboardingInputs()).map(\.id),
+        XCTAssertEqual(AppOnboarding.checklist(OnboardingInputs()).map(\.id),
                        ["microphone", "localnetwork", "tailscale", "speech", "detector", "computer"])
     }
 
     func testEveryItemHasItsOwnNameAndSomethingToRead() {
-        let items = Onboarding.checklist(OnboardingInputs())
+        let items = AppOnboarding.checklist(OnboardingInputs())
         XCTAssertEqual(Set(items.map(\.id)).count, items.count, "two items share an id")
         for item in items {
             XCTAssertFalse(item.title.isEmpty, item.id)
@@ -95,9 +96,9 @@ final class OnboardingTests: XCTestCase {
     }
 
     func testANewPhoneHasNothingDoneYet() {
-        let items = Onboarding.checklist(OnboardingInputs())
+        let items = AppOnboarding.checklist(OnboardingInputs())
         XCTAssertFalse(items.contains(where: \.isDone))
-        XCTAssertFalse(Onboarding.readyLine(OnboardingInputs()).ready)
+        XCTAssertFalse(AppOnboarding.onboarding(OnboardingInputs()).readyLine().ready)
     }
 
     func testNoChecklistFixEverAsksThePersonToType() {
@@ -105,7 +106,7 @@ final class OnboardingTests: XCTestCase {
                                            ready(),
                                            blocked()]
         for input in variants {
-            for item in Onboarding.checklist(input) {
+            for item in AppOnboarding.checklist(input) {
                 guard let label = item.fixLabel else { continue }
                 let words = ["type", "typing", "enter", "paste", "key", "address", "name it"]
                 for word in words {
@@ -119,7 +120,7 @@ final class OnboardingTests: XCTestCase {
         var input = ready()
         input.microphone = .denied
         input.localNetwork = .denied
-        let items = Onboarding.checklist(input)
+        let items = AppOnboarding.checklist(input)
         XCTAssertEqual(items.first { $0.id == "microphone" }?.state, .blocked)
         XCTAssertEqual(items.first { $0.id == "microphone" }?.fix, .openSettings)
         XCTAssertEqual(items.first { $0.id == "localnetwork" }?.state, .blocked)
@@ -129,7 +130,7 @@ final class OnboardingTests: XCTestCase {
     func testAFailedModelIsBlockedAndOffersTheDownloadAgain() {
         var input = ready()
         input.speechModel = .failed("no room on the phone")
-        let item = Onboarding.checklist(input).first { $0.id == "speech" }
+        let item = AppOnboarding.checklist(input).first { $0.id == "speech" }
         XCTAssertEqual(item?.state, .blocked)
         XCTAssertEqual(item?.fix, .downloadModel)
         XCTAssertTrue(item?.detail.contains("no room on the phone") ?? false, item?.detail ?? "")
@@ -139,7 +140,7 @@ final class OnboardingTests: XCTestCase {
         var input = ready()
         input.detectorListening = false
         input.detectorProblem = "the microphone is busy"
-        let item = Onboarding.checklist(input).first { $0.id == "detector" }
+        let item = AppOnboarding.checklist(input).first { $0.id == "detector" }
         XCTAssertEqual(item?.state, .blocked)
         XCTAssertEqual(item?.fix, .restartDetector)
         XCTAssertTrue(item?.detail.contains("the microphone is busy") ?? false, item?.detail ?? "")
@@ -150,53 +151,53 @@ final class OnboardingTests: XCTestCase {
         none.computers = 0
         none.readyComputers = 0
         none.hasChosenComputer = false
-        let empty = Onboarding.checklist(none).first { $0.id == "computer" }
+        let empty = AppOnboarding.checklist(none).first { $0.id == "computer" }
         XCTAssertEqual(empty?.fix, .findComputers)
 
         var waiting = none
         waiting.computers = 2
-        let listed = Onboarding.checklist(waiting).first { $0.id == "computer" }
+        let listed = AppOnboarding.checklist(waiting).first { $0.id == "computer" }
         XCTAssertEqual(listed?.fix, .findComputers)
         XCTAssertNotEqual(listed?.detail, empty?.detail, "the line should say what is different")
     }
 
     func testTheReadyLineSaysReadyOnlyWhenEveryItemIsDone() {
         for input in [OnboardingInputs(), ready(), blocked()] {
-            let line = Onboarding.readyLine(input)
-            XCTAssertEqual(line.ready, Onboarding.checklist(input).allSatisfy(\.isDone), line.text)
+            let line = AppOnboarding.onboarding(input).readyLine()
+            XCTAssertEqual(line.ready, AppOnboarding.checklist(input).allSatisfy(\.isDone), line.text)
         }
     }
 
     func testTheReadyLineWhenReadySaysWhatToSay() {
-        let line = Onboarding.readyLine(ready())
+        let line = AppOnboarding.onboarding(ready()).readyLine()
         XCTAssertTrue(line.ready)
         XCTAssertTrue(line.text.contains("kitty-cmere"), line.text)
     }
 
     func testTheReadyLineNamesTheFirstUndoneItemAndNothingElse() {
         let input = blocked()
-        let step = Onboarding.nextStep(input)
-        let line = Onboarding.readyLine(input)
+        let step = AppOnboarding.onboarding(input).nextStep()
+        let line = AppOnboarding.onboarding(input).readyLine()
         XCTAssertEqual(step?.id, "microphone", "the first problem comes first")
         XCTAssertTrue(line.text.hasPrefix("Next step: "), line.text)
         XCTAssertTrue(line.text.contains(step?.fixLabel ?? ""), line.text)
-        for other in Onboarding.checklist(input).filter({ $0.id != step?.id && !$0.isDone }).compactMap(\.fixLabel) {
+        for other in AppOnboarding.checklist(input).filter({ $0.id != step?.id && !$0.isDone }).compactMap(\.fixLabel) {
             XCTAssertFalse(line.text.contains(other), "the line names a second step: \(other)")
         }
     }
 
     func testTheNextStepIsAlwaysTheFirstUndoneItem() {
         for input in [OnboardingInputs(), ready(), blocked(), partway()] {
-            XCTAssertEqual(Onboarding.nextStep(input)?.id,
-                           Onboarding.checklist(input).first { !$0.isDone }?.id)
+            XCTAssertEqual(AppOnboarding.onboarding(input).nextStep()?.id,
+                           AppOnboarding.checklist(input).first { !$0.isDone }?.id)
         }
     }
 
     func testTheChecklistNeverGrowsOrShrinksWithTheState() {
-        XCTAssertEqual(Onboarding.checklist(OnboardingInputs()).count, 6)
-        XCTAssertEqual(Onboarding.checklist(ready()).count, 6)
-        XCTAssertEqual(Onboarding.checklist(blocked()).count, 6)
-        XCTAssertEqual(Onboarding.checklist(partway()).count, 6)
+        XCTAssertEqual(AppOnboarding.checklist(OnboardingInputs()).count, 6)
+        XCTAssertEqual(AppOnboarding.checklist(ready()).count, 6)
+        XCTAssertEqual(AppOnboarding.checklist(blocked()).count, 6)
+        XCTAssertEqual(AppOnboarding.checklist(partway()).count, 6)
     }
 
     @MainActor

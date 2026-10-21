@@ -1,4 +1,6 @@
 import Foundation
+import KitCore
+import KitHealth
 import Observation
 
 /// Sends queued texts by itself. While anything is waiting it asks the active computer for its status, and as soon as that says it can
@@ -31,8 +33,8 @@ final class AutoRetry {
     private let minimumAgent: Semver?
     private var task: Task<Void, Never>?
 
-    init(service: DeliveryService, log: EventLog?, timing: Timing = Timing(), app: Semver? = Compatibility.appVersion,
-         minimumAgent: Semver? = Compatibility.minimumAgent,
+    init(service: DeliveryService, log: EventLog?, timing: Timing = Timing(), app: Semver? = AppVersion.current,
+         minimumAgent: Semver? = AppVersion.minimumAgent,
          pause: @escaping Pause = { try? await Task.sleep(for: .seconds($0)) }) {
         self.service = service
         self.log = log
@@ -111,8 +113,7 @@ final class AutoRetry {
         case .keyNotSetOnMac: return "its input agent is not set up yet"
         case .incompatible(let message): return message
         case .ready(let status):
-            let verdict = Compatibility.judge(app: app, agent: status.version, minClient: status.minClientVersion,
-                                              minimumAgent: minimumAgent)
+            let verdict = AppVersion.verdict(for: status, app: app, minimumAgent: minimumAgent)
             if verdict != .compatible { return "app and agent versions do not match" }
             if !status.accessibility { return "needs Accessibility approval" }
             if status.locked { return "its screen is locked" }

@@ -1,5 +1,7 @@
 import Foundation
+import KitHealth
 import Observation
+import ParrotKit
 
 /// Runs the dictation flow: sounds go through the rules, the rules start and end dictation and submit the text.
 /// The hold button is the fallback and drives the same state.
@@ -25,6 +27,9 @@ final class FlowController {
     private(set) var detectorLabels: [String] = []
     private(set) var detectorProblem: String?
     private(set) var submitPending = false
+    /// True while the user records their sounds for training: sounds are still heard and listed, but no rule fires, so a click taught as
+    /// a sample does not start, end or submit anything.
+    private(set) var rulesPaused = false
     /// The last thing Parakeet heard and whether it ended with a line-ender, for the guided first dictation.
     struct Heard: Equatable {
         let raw: String
@@ -114,10 +119,16 @@ final class FlowController {
         }
     }
 
+    func setRulesPaused(_ paused: Bool) {
+        guard rulesPaused != paused else { return }
+        rulesPaused = paused
+        log.add(.rule, paused ? "rules paused while sounds are recorded" : "rules active again")
+    }
+
     func heard(_ events: [SoundEvent]) {
         for event in events {
             let before = engine.state
-            let fired = engine.hear(event.pattern, at: event.time)
+            let fired = rulesPaused ? nil : engine.hear(event.pattern, at: event.time)
             // The model's "not a command" patterns can fire dozens of times a second; they stay out of the log.
             if !event.pattern.hasPrefix("suppress") {
                 let percent = Int((event.probability * 100).rounded())

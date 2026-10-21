@@ -1,3 +1,4 @@
+import ParrotKit
 import XCTest
 @testable import DictationApp
 
@@ -168,7 +169,7 @@ final class AppModelTests: XCTestCase {
         try store.save(MacTarget(name: "MacBook", address: "macbook.ts.net"), key: "k")
         return AppModel(session: DictationSession(transcriber: FakeTranscriber()), outbox: Outbox(url: nil), targets: store,
                         client: ReceiverClient(session: StubURLProtocol.session(), tailnetConnected: { true }),
-                        models: ParrotModelStore(directory: temporaryFile(), bundled: { [] }),
+                        models: testStore(),
                         ruleStore: RuleStore(defaults: isolatedDefaults()))
     }
 

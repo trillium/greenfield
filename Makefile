@@ -11,7 +11,7 @@ doctor: ## check Xcode, tools, identity, signing prerequisites (SIGNING=1 makes 
 core: ## stage the sound detector libraries and the bundled model into .parrot-core (see scripts/fetch-core.sh)
 	scripts/fetch-core.sh
 generate: ## generate the .xcodeproj from project.yml
-	xcodegen generate
+	PARROT_KIT_DIR="$$(scripts/kit-dir.sh)" xcodegen generate
 build: ## simulator build, no signing
 	scripts/build.sh
 device-compile: ## iphoneos-SDK compile check, signing disabled

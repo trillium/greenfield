@@ -1,3 +1,4 @@
+import ParrotKit
 import SwiftUI
 
 /// The Macs this phone can send to. They are found, never typed: Bonjour, the tailnet and the QR code a Mac shows.
@@ -29,6 +30,7 @@ struct TargetsView: View {
                         }
                     }
                 }
+                TrainerRows(directory: model.trainers)
                 Section {
                     Text("""
                     Text goes to exactly one computer: the active one (tap to choose). Computers on your tailnet are trusted by \
@@ -63,8 +65,37 @@ struct TargetsView: View {
                 while !Task.isCancelled {
                     await model.health.refreshAll()
                     await model.peers.refresh()
+                    await model.trainers.refresh()
                     try? await Task.sleep(for: .seconds(15))
                 }
+            }
+        }
+    }
+}
+
+/// The trainers found on the tailnet, under the computers: they are found by themselves, so there is nothing to add or edit.
+struct TrainerRows: View {
+    @ObservedObject var directory: TrainerDirectory
+
+    var body: some View {
+        if !directory.trainers.isEmpty {
+            Section {
+                ForEach(directory.trainers) { trainer in
+                    let probe = directory.probe(for: trainer)
+                    HStack(spacing: 12) {
+                        Circle().fill(probe.health?.compatible == true ? Color.green : Color.orange).frame(width: 10, height: 10)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(trainer.name).font(.headline)
+                            Text(trainer.address).font(.caption).foregroundStyle(.secondary)
+                            Text(probe.summary).font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            } header: {
+                Text("Trainer")
+            } footer: {
+                Text("Trains models for Sounds > Teach your sounds. Found by itself; nothing to set up here.")
             }
         }
     }

@@ -1,3 +1,5 @@
+import KitHealth
+import KitCore
 import XCTest
 @testable import DictationApp
 

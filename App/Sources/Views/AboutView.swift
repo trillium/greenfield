@@ -1,3 +1,5 @@
+import KitHealth
+import KitUI
 import SwiftUI
 
 struct AboutView: View {
@@ -21,7 +23,8 @@ struct AboutView: View {
                     NavigationLink("Attribution") { AttributionView() }
                 }
                 Section {
-                    Text("Audio never leaves the phone. Only the text is sent, to the Mac you choose.")
+                    Text("Dictation audio never leaves the phone. Only the text is sent, to the Mac you choose. "
+                         + "Sounds you record under Teach go only to your own trainer, and only when you press Train.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }

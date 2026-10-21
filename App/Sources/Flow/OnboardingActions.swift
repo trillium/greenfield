@@ -1,5 +1,7 @@
 import AVFoundation
 import Foundation
+import KitHealth
+import KitOnboarding
 import UIKit
 
 /// What the one-tap fixes do, and the facts the checklist is built from.
@@ -29,17 +31,12 @@ extension AppModel {
         return input
     }
 
-    func checklist() -> [OnboardingItem] { Onboarding.checklist(onboardingInputs()) }
+    func checklist() -> [OnboardingItem] { AppOnboarding.checklist(onboardingInputs()) }
 
     /// The "Am I ready?" line: ready, or exactly one next step. The checklist comes first; once it is complete, a real problem
     /// that Health knows about (a computer that is locked, needs approval, is out of date) is the next step.
-    func readiness() -> (ready: Bool, text: String) {
-        let line = Onboarding.readyLine(onboardingInputs())
-        guard line.ready else { return line }
-        if let problem = healthReport().first(where: { $0.level == .problem }), let fix = problem.fix {
-            return (false, "Next step: \(fix) (\(problem.title))")
-        }
-        return line
+    func readiness() -> ReadyLine {
+        AppOnboarding.onboarding(onboardingInputs()).readyLine(health: healthReport())
     }
 
     func perform(_ fix: OnboardingFix) async {
@@ -62,6 +59,8 @@ extension AppModel {
             await health.refreshAll()
             await peers.refresh()
             peers.chooseTheOnlyComputer(health: health)
+        default:
+            break
         }
     }
 }
