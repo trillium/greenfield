@@ -9,6 +9,6 @@ echo "testing $SCHEME on: $dest"
 mkdir -p "$BUILD_DIR"
 rm -rf "$BUILD_DIR/test.xcresult"
 xcodebuild -project "$PROJECT" -scheme "$SCHEME" -destination "$dest" \
-  -derivedDataPath "$DERIVED" -resultBundlePath "$BUILD_DIR/test.xcresult" \
+  -derivedDataPath "$DERIVED" -resultBundlePath "$BUILD_DIR/test.xcresult" "${PINNED_PACKAGES[@]}" \
   -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO test -quiet
 echo "tests ok (result bundle: ${BUILD_DIR#"$ROOT"/}/test.xcresult)"

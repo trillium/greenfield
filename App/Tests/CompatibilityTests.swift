@@ -55,6 +55,19 @@ final class CompatibilityVerdictTests: XCTestCase {
         XCTAssertEqual(Compatibility.judge(app: nil, agent: "0.9.0", minClient: "5.0.0", minimumAgent: floor), .compatible)
     }
 
+    func testABuildBelowItsOwnFloorDoesNotBlameTheAgent() {
+        // An untagged checkout stamps the app 0.0.1 while the floor still says 0.2.0: the two Macs and phones that
+        // ship from the same tree are the same age, so neither is told to update.
+        XCTAssertEqual(Compatibility.judge(app: Semver(0, 0, 1), agent: "0.0.1", minClient: nil, minimumAgent: floor), .compatible)
+        XCTAssertEqual(Compatibility.judge(app: Semver(0, 1, 9), agent: "0.1.4", minClient: nil, minimumAgent: Semver(0, 2, 0)),
+                       .compatible)
+    }
+
+    func testTheFloorStillSpeaksForABuildAtOrAboveIt() {
+        XCTAssertEqual(Compatibility.judge(app: Semver(0, 2, 0), agent: "0.1.0", minClient: nil, minimumAgent: floor), .updateAgent)
+        XCTAssertEqual(Compatibility.judge(app: Semver(0, 3, 0), agent: "0.1.0", minClient: nil, minimumAgent: floor), .updateAgent)
+    }
+
     func testTheLiveAppDeclaresAMinimumAndKnowsItsVersion() {
         XCTAssertNotNil(Compatibility.minimumAgent, "GREENFIELD_MIN_PEER_VERSION must reach Info.plist")
         XCTAssertNotNil(Compatibility.appVersion, "the app's version comes from the git tag, never typed in")

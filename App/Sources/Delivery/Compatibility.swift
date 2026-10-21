@@ -59,7 +59,9 @@ enum Compatibility {
         guard let app else { return .compatible }
         if let minClient = Semver(minClient), app < minClient { return .updateApp }
         guard let agent = Semver(agent) else { return .updateAgent }
-        if let minimumAgent, agent < minimumAgent { return .updateAgent }
+        // The floor describes the line this app was cut from, so it only speaks for a build at or above it. A working build from an
+        // untagged checkout stamps itself 0.0.1, and telling such a build to update every Mac it meets is a false red state.
+        if let minimumAgent, minimumAgent <= app, agent < minimumAgent { return .updateAgent }
         if app.isCompatible(with: agent) { return .compatible }
         return agent > app ? .updateApp : .updateAgent
     }
