@@ -46,6 +46,19 @@ Used for the status line and dot beside each computer. The app reads `name`, `ve
 
 A computer with no key saved is checked like any other; a missing key is never reported as a problem.
 
+## `GET /logs`
+Not used by the phone's sending path; it is how a person (or `make logs`) asks a Mac for its own recent log when something is not working. Authorized like every other route (this Mac, or a device of its tailnet user; the optional key is *not* enough, 403 `logs_need_same_user`), with no `X-Greenfield-App` gate. Parameters: `tail` 1 to 2000 (default 200), `since` up to 7 days (`90s`, `30m`, `2h`, `1d`), `format` `json` (default) or `text`.
+
+| Status / `error` | Meaning |
+|---|---|
+| 200 | `{ok, name, version, generated_at, tail, since_s, count, bytes, truncated, lines[]}`; at most 256 KiB, newest lines kept; every line redacted, never dictated text or a key |
+| 400 `bad_request` | an unknown or out-of-range parameter |
+| 401 / 503 `identity_unavailable` | refused / Tailscale could not say who is calling (fails closed) |
+| 404 `no_log` | the daemon has no log file yet (an older daemon answers 404 `not_found`) |
+| 429 `rate_limited` | more than 6 answered requests in a minute (`Retry-After`) |
+
+`GET /status` adds `logs_available` (bool) and `logs` (`route`, `max_lines`, `max_bytes`). Contract version: this route is additive and ships with the 0.3 line (MINOR bump 0.2 to 0.3, so the app and every daemon move together; `docs/versioning.md`). More: `docs/logs.md`.
+
 ## `POST /text`
 ```json
 { "id": "6F1C2E0A-5B7D-4E8B-9C41-0A2D3B4C5D6E", "text": "Hello, world.", "source": "greenfield" }

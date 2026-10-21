@@ -13,7 +13,8 @@ Non-speech sounds (tongue clicks, pops, kitty-cmere) start and end dictation thr
 - **Sounds**: live list of every sound the detector recognises, the rule editor, and model packs (install, switch, remove).
 - **Outbox**: every submitted text is kept until a computer has it, with its target and the plain reason it is waiting, and a Retry button; the same id is reused, so a Mac that already typed it will not type it twice.
 - **Computers**: the Macs this phone can send to, found by themselves (Bonjour on the local network, the tailnet, or the QR code a Mac shows) with a reachability dot each. Computers on your tailnet are trusted by tailnet identity, so there is nothing to type and no secret to keep. Text goes to exactly one Mac, the selected one. An **Advanced** row at the bottom is the only place in the app with a field you can type into, and the normal flow never needs it.
-- **Help**: Health (checks everything and says how to fix it), Diagnostics (recent events), About and Attribution: credit for the speech model and libraries (CC BY 4.0 and Apache-2.0).
+- **Help**: Health (checks everything and says how to fix it), Diagnostics (recent events, and a Share logs button), About and Attribution: credit for the speech model and libraries (CC BY 4.0 and Apache-2.0).
+- **Logs**: `make logs` pulls the recent, redacted logs of the phone and of each Mac with no cable (`docs/logs.md`).
 
 ## Layout
 - `App/Sources/Audio`: the microphone. One `AVAudioEngine` tap (`AudioCapture`) publishes 16 kHz mono PCM on a `SampleBus` so several consumers can share it. Also an energy `Endpointer`, the `ListenMachine` state machine, `BackgroundGrace` and `CaptureHeartbeat`.
@@ -23,7 +24,7 @@ Non-speech sounds (tongue clicks, pops, kitty-cmere) start and end dictation thr
 - `Spike/`: a separate benchmark app comparing Parakeet, WhisperKit and Moonshine on the phone. Results: `docs/spike-dictation.md`.
 - `docs/mac-contract.md`: how the phone talks to the Mac input agent (`greenfield-inserter`, a separate project). `tools/stub-receiver` stands in for it in tests.
 - `docs/onboarding.md`: the setup a new person follows, Mac and phone, start to finish.
-- `docs/sounds.md`, `docs/attribution.md`, `docs/audio-session.md`, `docs/versioning.md`, `docs/signing.md`.
+- `docs/logs.md`, `docs/sounds.md`, `docs/attribution.md`, `docs/audio-session.md`, `docs/versioning.md`, `docs/signing.md`.
 
 ## Build
 1. `brew install xcodegen swiftlint shellcheck`
