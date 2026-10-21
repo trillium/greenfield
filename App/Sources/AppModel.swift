@@ -67,6 +67,10 @@ final class AppModel {
                            addressProvider: trainers, configuration: trainerConfiguration, policy: .activateKeepingPrevious,
                            defaults: teachDefaults, makeClient: AppTeach.makeClient)
         teach.onRecordingChanged = { [flowController] recording in flowController.setRulesPaused(recording) }
+        // One microphone tap records dictation and sound takes: while dictation runs, the kit's Record button is dimmed with this reason.
+        flowController.onDictatingChanged = { [weak teach] dictating in
+            teach?.setRecordingBlocked(dictating ? Self.stillDictating : nil)
+        }
         log.add(.app, "app started, \(BuildInfo().display)")
         support.health = { [weak self] in self?.healthReport() ?? HealthReport(items: []) }
         support.writeNow()
@@ -79,10 +83,14 @@ final class AppModel {
         return base.appendingPathComponent("Sounds/Teach", isDirectory: true)
     }
 
+    /// One microphone tap serves dictation and recording the user's sounds, so the second has to wait. Two sentences: the reason
+    /// first, then what to do, which is how VoiceOver reads a hint.
+    static let stillDictating = "Finish dictating first. Stop dictating, then record your sound."
+
     /// Makes sure the one microphone tap is running for a take; returns a sentence when it cannot be.
     private static func prepareMicrophone(_ session: DictationSession?) async -> String? {
         guard let session else { return "The app is closing." }
-        if session.isHolding { return "Finish dictating first, then record." }
+        if session.isHolding { return stillDictating }
         await session.startListening()
         if session.micDenied { return "Microphone access is off. Turn it on in iPhone Settings > Greenfield." }
         return session.capture.isRunning ? nil : "The microphone is not available right now. Try again in a moment."

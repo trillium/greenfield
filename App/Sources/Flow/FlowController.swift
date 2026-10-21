@@ -80,6 +80,9 @@ final class FlowController {
         }
     }
 
+    /// Told when dictation starts and stops, so anything else that shares the one microphone tap can say why it is waiting.
+    var onDictatingChanged: ((Bool) -> Void)?
+
     /// The detector is subscribed to the microphone's tap.
     var isListening: Bool { listener != nil }
     var state: FlowState { engine.state }
@@ -216,6 +219,7 @@ final class FlowController {
 
     private func dictationChanged(_ on: Bool) {
         log.add(.dictation, on ? "recording started" : "recording stopped")
+        onDictatingChanged?(on)
         if on {
             engine.setState(.dictating)
         } else if engine.state == .dictating {
