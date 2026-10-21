@@ -16,10 +16,11 @@ final class StubProbe: SystemProbe {
 final class SpyInserter: TextInserter {
     var inserted: [(String, InsertMethod?)] = []
     var error: Error?
-    func insert(_ text: String, method: InsertMethod?) throws -> InsertMethod {
+    var delivery: Delivery = .confirmed
+    func insert(_ text: String, method: InsertMethod?) throws -> InsertOutcome {
         if let error = error { throw error }
         inserted.append((text, method))
-        return method ?? .paste
+        return InsertOutcome(method: method ?? .paste, delivery: delivery)
     }
 }
 
@@ -87,23 +88,140 @@ final class HandlerTests: XCTestCase {
         XCTAssertEqual(o["listen"] as? [String], ["100.84.99.99:47821", "127.0.0.1:47821"])
     }
 
+    // MARK: /health
+
+    func testHealthIsLoopbackOnlyAndNeedsNoKey() {
+        let local = handler.handle(HTTPRequest(method: "GET", path: "/health", fromLoopback: true))
+        XCTAssertEqual(local.status, 200)
+        let o = object(local)
+        XCTAssertEqual(o["key_configured"] as? Bool, true)
+        XCTAssertNotNil(o["pid"]); XCTAssertNotNil(o["executable"]); XCTAssertNotNil(o["listen"])
+        // A request that arrives over the network is refused even with a valid key.
+        let remote = handler.handle(HTTPRequest(method: "GET", path: "/health", headers: ["x-dictation-key": "good"]))
+        XCTAssertEqual(remote.status, 403)
+        XCTAssertEqual(handler.handle(HTTPRequest(method: "POST", path: "/health", fromLoopback: true)).status, 405)
+    }
+
+    func testHealthReportsMissingKeyAndNeverEchoesKeys() {
+        keys.result = .notConfigured
+        let r = handler.handle(HTTPRequest(method: "GET", path: "/health", headers: ["x-dictation-key": "good"], fromLoopback: true))
+        XCTAssertEqual(object(r)["key_configured"] as? Bool, false)
+        XCTAssertFalse(String(data: r.body, encoding: .utf8)!.contains("good"))
+    }
+
+    // MARK: tailnet identity
+
+    final class StubIdentity: TailnetIdentity {
+        var result: PeerIdentity = .sameUser(login: "me@example")
+        var own: String? = "me@example"
+        var asked: [String] = []
+        func identify(_ address: String) -> PeerIdentity { asked.append(address); return result }
+        func selfLogin() -> String? { own }
+    }
+
+    func identityHandler(_ identity: StubIdentity) -> RequestHandler {
+        RequestHandler(keys: keys, probe: probe, inserter: inserter, name: { "Test Mac" }, identity: identity, logger: logger)
+    }
+
+    func call(_ h: RequestHandler, key: String? = nil, loopback: Bool = false, peer: String? = "100.64.0.9", path: String = "/status") -> HTTPResponse {
+        var headers: [String: String] = [:]
+        if let key = key { headers["x-dictation-key"] = key }
+        return h.handle(HTTPRequest(method: path == "/text" ? "POST" : "GET", path: path, headers: headers,
+                                    body: Data(#"{"id":"i1","text":"x"}"#.utf8), fromLoopback: loopback, peerAddress: peer))
+    }
+
+    func testSameUserNeedsNoKey() {
+        let id = StubIdentity()
+        keys.result = .notConfigured                       // no key at all is fine
+        XCTAssertEqual(call(identityHandler(id)).status, 200)
+        XCTAssertEqual(id.asked, ["100.64.0.9"])
+        XCTAssertEqual(call(identityHandler(id), path: "/text").status, 200)
+    }
+
+    func testOtherTailnetUserIsRefused() {
+        let id = StubIdentity(); id.result = .otherUser(login: "stranger@example")
+        let r = call(identityHandler(id), path: "/text")
+        XCTAssertEqual(r.status, 401)
+        XCTAssertTrue(inserter.inserted.isEmpty)
+        XCTAssertTrue(object(r)["message"] as? String == "this device belongs to a different tailnet user (stranger@example) than this Mac")
+    }
+
+    func testFailsClosedWhenTailscaleCannotAnswer() {
+        let id = StubIdentity(); id.result = .unknown("tailscale is not running")
+        let r = call(identityHandler(id), path: "/text")
+        XCTAssertEqual(r.status, 503)
+        XCTAssertEqual(object(r)["error"] as? String, "identity_unavailable")
+        XCTAssertTrue(inserter.inserted.isEmpty)
+        // no identity provider at all, or no peer address, is also a refusal
+        XCTAssertEqual(call(handler).status, 503)
+        XCTAssertEqual(call(identityHandler(StubIdentity()), peer: nil).status, 503)
+    }
+
+    func testLoopbackIsAlwaysAllowedWithoutAskingTailscale() {
+        let id = StubIdentity(); id.result = .unknown("down")
+        let r = call(identityHandler(id), loopback: true, peer: "127.0.0.1")
+        XCTAssertEqual(r.status, 200)
+        XCTAssertTrue(id.asked.isEmpty)
+    }
+
+    func testOptionalKeyLetsInOtherUsers() {
+        let id = StubIdentity(); id.result = .otherUser(login: "friend@example")
+        XCTAssertEqual(call(identityHandler(id), key: "good").status, 200)
+        XCTAssertEqual(call(identityHandler(id), key: "wrong").status, 401)
+        XCTAssertTrue((object(call(identityHandler(id), key: "wrong"))["message"] as? String ?? "").contains("only a hash"))
+        // and the key also works when Tailscale is down
+        id.result = .unknown("down")
+        XCTAssertEqual(call(identityHandler(id), key: "good").status, 200)
+    }
+
+    func testSameUserWithAWrongKeyIsStillAllowed() {
+        XCTAssertEqual(call(identityHandler(StubIdentity()), key: "wrong").status, 200)
+    }
+
+    func testOkDeliveryHasNoFixAndIsTrue() {
+        final class Ok: DeliveryRecord {
+            func recordSuccess(source: String) {}; func recordFailure(source: String, detail: String) {}
+            func canInsert() -> CanInsert { CanInsert(state: .ok, at: Date(), source: "selftest", detail: "d") }
+        }
+        let h = RequestHandler(keys: keys, probe: probe, inserter: inserter, name: { "m" }, record: Ok(), logger: logger)
+        let st = object(h.handle(HTTPRequest(method: "GET", path: "/status", headers: ["x-dictation-key": "good"])))
+        XCTAssertEqual(st["can_insert"] as? Bool, true)
+        XCTAssertEqual(st["delivery_fix"] as? String, "")
+        XCTAssertTrue((st["delivery_message"] as? String ?? "").contains("read back"))
+    }
+
+    func testStatusReportsTailnetAuthMode() {
+        let id = StubIdentity()
+        let o = object(call(identityHandler(id)))
+        XCTAssertEqual(o["auth"] as? String, "tailnet")
+        XCTAssertEqual(o["tailnet_user"] as? String, "me@example")
+        XCTAssertEqual(o["identity_ok"] as? Bool, true)
+        XCTAssertEqual(o["key_configured"] as? Bool, true)
+        keys.result = .notConfigured
+        XCTAssertEqual(object(call(identityHandler(id)))["key_configured"] as? Bool, false)
+        id.own = nil
+        XCTAssertEqual(object(call(identityHandler(id)))["identity_ok"] as? Bool, false)
+    }
+
     // MARK: auth
 
-    func testMissingAndWrongKeyAre401() {
-        XCTAssertEqual(post(#"{"id":"a","text":"hi"}"#, key: nil).status, 401)
-        XCTAssertEqual(post(#"{"id":"a","text":"hi"}"#, key: "bad").status, 401)
-        XCTAssertEqual(handler.handle(HTTPRequest(method: "GET", path: "/status")).status, 401)
+    func testRefusedDevicesGet401WithOrWithoutAKey() {
+        let id = StubIdentity(); id.result = .otherUser(login: "x@example")
+        let h = identityHandler(id)
+        XCTAssertEqual(call(h, path: "/text").status, 401)
+        XCTAssertEqual(call(h, key: "bad", path: "/text").status, 401)
+        XCTAssertEqual(call(h).status, 401)
         XCTAssertTrue(inserter.inserted.isEmpty)
     }
 
-    func testUnconfiguredKeyIs503() {
+    func testNoKeyConfiguredIsNotAnError() {
         keys.result = .notConfigured
-        XCTAssertEqual(post(#"{"id":"a","text":"hi"}"#).status, 503)
-        XCTAssertEqual(object(post(#"{"id":"a","text":"hi"}"#))["error"] as? String, "key_not_configured")
+        XCTAssertEqual(call(identityHandler(StubIdentity()), path: "/text").status, 200)
     }
 
     func testAuthIsCheckedBeforeMethodAndBody() {
-        let r = handler.handle(HTTPRequest(method: "DELETE", path: "/text"))
+        let id = StubIdentity(); id.result = .otherUser(login: "x@example")
+        let r = identityHandler(id).handle(HTTPRequest(method: "DELETE", path: "/text", peerAddress: "100.64.0.9"))
         XCTAssertEqual(r.status, 401)
     }
 
@@ -180,6 +298,51 @@ final class HandlerTests: XCTestCase {
         let r = post(#"{"id":"a","text":"x"}"#)
         XCTAssertEqual(r.status, 503)
         XCTAssertEqual(object(r)["error"] as? String, "accessibility_not_granted")
+    }
+
+    func testDeliveryEvidenceIsReported() {
+        XCTAssertEqual(object(post(#"{"id":"c1","text":"x"}"#))["delivery"] as? String, "confirmed")
+        inserter.delivery = .unconfirmed
+        XCTAssertEqual(object(post(#"{"id":"c2","text":"x"}"#))["delivery"] as? String, "unconfirmed")
+    }
+
+    func testDeliveryEvidenceIsRecordedAndReported() {
+        final class Rec: DeliveryRecord {
+            var events: [String] = []
+            func recordSuccess(source: String) { events.append("ok:\(source)") }
+            func recordFailure(source: String, detail: String) { events.append("fail:\(source)") }
+            func canInsert() -> CanInsert { CanInsert(state: events.last?.hasPrefix("ok") == true ? .ok : .failed, at: Date(), source: "delivery", detail: "d") }
+        }
+        let rec = Rec()
+        let h = RequestHandler(keys: keys, probe: probe, inserter: inserter, name: { "m" }, record: rec, logger: logger)
+        _ = h.handle(HTTPRequest(method: "POST", path: "/text", headers: ["x-dictation-key": "good"], body: Data(#"{"id":"r1","text":"x"}"#.utf8)))
+        inserter.delivery = .unconfirmed                   // unreadable target: not evidence either way
+        _ = h.handle(HTTPRequest(method: "POST", path: "/text", headers: ["x-dictation-key": "good"], body: Data(#"{"id":"r2","text":"x"}"#.utf8)))
+        inserter.error = InsertError.notDelivered
+        _ = h.handle(HTTPRequest(method: "POST", path: "/text", headers: ["x-dictation-key": "good"], body: Data(#"{"id":"r3","text":"x"}"#.utf8)))
+        XCTAssertEqual(rec.events, ["ok:delivery", "fail:delivery"])
+        let s = h.handle(HTTPRequest(method: "GET", path: "/health", fromLoopback: true))
+        XCTAssertNotNil((object(s)["evidence"] as? [String: Any])?["state"])
+        let st = object(h.handle(HTTPRequest(method: "GET", path: "/status", headers: ["x-dictation-key": "good"])))
+        // the phone's contract: flat fields and a delivery object, in a tailnet-reachable /status
+        XCTAssertEqual(st["can_insert"] as? Bool, false)                    // last event was a failure
+        XCTAssertFalse((st["delivery_message"] as? String ?? "").isEmpty)
+        XCTAssertFalse((st["delivery_fix"] as? String ?? "").isEmpty)
+        let d = st["delivery"] as? [String: Any]
+        XCTAssertEqual(d?["ok"] as? Bool, false); XCTAssertEqual(d?["can_insert"] as? Bool, false)
+        XCTAssertEqual(d?["message"] as? String, st["delivery_message"] as? String)
+        XCTAssertEqual(d?["fix"] as? String, st["delivery_fix"] as? String)
+    }
+
+    func testNotDeliveredIs502AndCanBeRetried() {
+        inserter.error = InsertError.notDelivered
+        let r = post(#"{"id":"nd","text":"x"}"#)
+        XCTAssertEqual(r.status, 502)
+        XCTAssertEqual(object(r)["error"] as? String, "not_delivered")
+        XCTAssertFalse(String(data: r.body, encoding: .utf8)!.contains("\"ok\":true"))
+        inserter.error = nil
+        XCTAssertEqual(post(#"{"id":"nd","text":"x"}"#).status, 200)     // a failure is not cached
+        XCTAssertFalse(logger.lines.joined().contains(" inserted "))
     }
 
     func testInserterFailureIs500() {

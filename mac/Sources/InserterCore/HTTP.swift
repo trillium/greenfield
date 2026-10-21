@@ -6,10 +6,17 @@ public struct HTTPRequest: Equatable {
     /// Header names are lowercased.
     public var headers: [String: String]
     public var body: Data
+    /// True when the TCP peer is on this Mac (set by the server, never taken from the request).
+    public var fromLoopback: Bool
+    /// The TCP peer's IPv4 address (set by the server), used to ask Tailscale who is calling.
+    public var peerAddress: String?
 
-    public init(method: String, path: String, headers: [String: String] = [:], body: Data = Data()) {
+    public init(method: String, path: String, headers: [String: String] = [:], body: Data = Data(),
+                fromLoopback: Bool = false, peerAddress: String? = nil) {
+        self.peerAddress = peerAddress
         self.method = method
         self.path = path
+        self.fromLoopback = fromLoopback
         self.headers = Dictionary(uniqueKeysWithValues: headers.map { ($0.key.lowercased(), $0.value) })
         self.body = body
     }
@@ -51,6 +58,7 @@ public struct HTTPResponse: Equatable {
         case 200: return "OK"
         case 400: return "Bad Request"
         case 401: return "Unauthorized"
+        case 403: return "Forbidden"
         case 404: return "Not Found"
         case 405: return "Method Not Allowed"
         case 408: return "Request Timeout"
@@ -58,9 +66,11 @@ public struct HTTPResponse: Equatable {
         case 411: return "Length Required"
         case 413: return "Payload Too Large"
         case 423: return "Locked"
+        case 426: return "Upgrade Required"
         case 431: return "Request Header Fields Too Large"
         case 500: return "Internal Server Error"
         case 501: return "Not Implemented"
+        case 502: return "Bad Gateway"
         case 503: return "Service Unavailable"
         default: return "Status"
         }

@@ -47,3 +47,9 @@ AuthKey_*
 .env
 .env.*
 !.env.example
+
+# Generated from git tags by mac/Makefile
+mac/Sources/InserterCore/GeneratedVersion.swift
+
+__pycache__/
+*.pyc

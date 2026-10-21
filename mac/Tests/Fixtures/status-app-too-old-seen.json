@@ -1,0 +1,59 @@
+{
+  "_comment" : "Recorded from the real handler by ContractTests (RECORD_FIXTURES=1). HTTP status 200. The phone's tests parse this file.",
+  "_http_status" : 200,
+  "accessibility" : true,
+  "accessibility_at_start" : true,
+  "app_compatible" : {
+    "fix" : "Update the app on the phone to a version on the same line as 0.2.0.",
+    "message" : "the newest app seen (0.1.0, 2 minutes ago) is older than this daemon works with (daemon 0.2.0, oldest app 0.2.0)",
+    "ok" : false
+  },
+  "auth" : "tailnet",
+  "build" : {
+    "binary_sha" : "0123456789abcdef",
+    "commit" : "abc1234",
+    "started_at" : "2027-01-15T08:00:00Z",
+    "version" : "0.2.0"
+  },
+  "can_insert" : true,
+  "clients" : [
+    {
+      "at" : "2027-01-15T08:09:00Z",
+      "version" : "0.1.0"
+    }
+  ],
+  "delivery" : {
+    "at" : "2027-01-15T08:00:00Z",
+    "can_insert" : true,
+    "fix" : "",
+    "message" : "text was read back from a field 0 seconds ago by the selftest",
+    "ok" : true,
+    "source" : "selftest",
+    "state" : "ok",
+    "text" : "text was read back from a field 0 seconds ago by the selftest"
+  },
+  "delivery_fix" : "",
+  "delivery_message" : "text was read back from a field 0 seconds ago by the selftest",
+  "evidence" : {
+    "at" : "2027-01-15T08:00:00Z",
+    "detail" : "text was read back from the focused field",
+    "source" : "selftest",
+    "state" : "ok"
+  },
+  "identity_ok" : true,
+  "inserted_count" : 0,
+  "key_configured" : true,
+  "listen" : [
+    "100.64.0.10:47821",
+    "127.0.0.1:47821"
+  ],
+  "min_client_version" : "0.2.0",
+  "name" : "Example Mac",
+  "ok" : true,
+  "screen_locked" : false,
+  "secure_input" : false,
+  "service" : "greenfield-inserter",
+  "tailnet_user" : "me@example",
+  "uptime_s" : 3600,
+  "version" : "0.2.0"
+}

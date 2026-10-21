@@ -18,7 +18,7 @@ for f in package-lock.json yarn.lock pnpm-lock.yaml bun.lockb; do
 done
 
 # 4. SwiftLint on staged Swift files.
-SWIFT=$(echo "$STAGED" | grep '\.swift$' || true)
+SWIFT=$(echo "$STAGED" | grep '\.swift$' | grep -v '^mac/' || true)
 if [ -n "$SWIFT" ]; then
   if command -v swiftlint >/dev/null 2>&1; then echo "$SWIFT" | xargs swiftlint lint --strict --quiet
   else echo "warning: swiftlint not installed; skipping (make check will require it)"; fi

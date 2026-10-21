@@ -13,6 +13,8 @@ final class ClientTests: XCTestCase {
         XCTAssertEqual(status("{\(base),\"accessibility\":true,\"screen_locked\":false,\"secure_input\":true}").0, .secureInput)
         XCTAssertEqual(status("{\(base),\"accessibility\":false,\"screen_locked\":false,\"secure_input\":false}").0, .noAccessibility)
         XCTAssertEqual(status("{}", 401).0, .unauthorized)
+        XCTAssertEqual(status(#"{"error":"identity_unavailable"}"#, 503).0, .identityUnavailable)
+        XCTAssertEqual(status(#"{"version":"1","accessibility":true,"identity_ok":false}"#).0, .identityUnavailable)
         XCTAssertEqual(status(#"{"error":"key_not_configured"}"#, 503).0, .keyNotSet)
         XCTAssertEqual(status("{}", 500).0, .unexpected(500))
         let ready = status("{\(base),\"accessibility\":true}")
@@ -37,7 +39,9 @@ final class ClientTests: XCTestCase {
         XCTAssertTrue(r(423).summary.contains("locked"))
         XCTAssertTrue(r(503, #"{"error":"accessibility_not_granted"}"#).summary.contains("Accessibility"))
         XCTAssertTrue(r(503, #"{"error":"key_not_configured"}"#).summary.contains("no key"))
-        XCTAssertTrue(r(401).summary.contains("wrong key"))
+        XCTAssertTrue(r(503, #"{"error":"identity_unavailable"}"#).summary.contains("Tailscale"))
+        XCTAssertTrue(r(401).summary.contains("tailnet user"))
+        XCTAssertTrue(r(502).summary.contains("not delivered"))
     }
 
     func testRegistryRoundTripAndPermissions() throws {
@@ -45,6 +49,11 @@ final class ClientTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: dir) }
         let reg = MacRegistry(paths: InserterPaths(directory: dir))
         XCTAssertEqual(reg.load(), [])
+        // an entry with no key (the normal case now) and an older file without a port still load
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data(#"[{"alias":"old","host":"h"}]"#.utf8).write(to: reg.file)
+        XCTAssertEqual(reg.load(), [KnownMac(alias: "old", host: "h")])
+        try FileManager.default.removeItem(at: reg.file)
         try reg.upsert(KnownMac(alias: "mini0", host: "mini0.example", key: "k1"))
         try reg.upsert(KnownMac(alias: "book", host: "book.example", port: 1234, key: "k2"))
         try reg.upsert(KnownMac(alias: "mini0", host: "mini0.example", key: "k3"))      // replaces

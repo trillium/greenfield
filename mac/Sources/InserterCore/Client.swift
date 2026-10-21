@@ -7,9 +7,23 @@ public struct KnownMac: Codable, Equatable {
     public var host: String
     public var port: Int
     public var key: String
+    /// Optional `user@host` for running commands on that Mac over ssh (used by `macs selftest`).
+    public var ssh: String?
 
-    public init(alias: String, host: String, port: Int = 47821, key: String) {
-        self.alias = alias; self.host = host; self.port = port; self.key = key
+    /// `key` is empty when none was saved: the daemon authorizes by tailnet identity and the key is optional.
+    public init(alias: String, host: String, port: Int = 47821, key: String = "", ssh: String? = nil) {
+        self.alias = alias; self.host = host; self.port = port; self.key = key; self.ssh = ssh
+    }
+
+    enum CodingKeys: String, CodingKey { case alias, host, port, key, ssh }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        alias = try c.decode(String.self, forKey: .alias)
+        host = try c.decode(String.self, forKey: .host)
+        port = try c.decodeIfPresent(Int.self, forKey: .port) ?? 47821
+        key = try c.decodeIfPresent(String.self, forKey: .key) ?? ""
+        ssh = try c.decodeIfPresent(String.self, forKey: .ssh)
     }
 }
 
@@ -57,6 +71,7 @@ public enum MacState: Equatable {
     case secureInput
     case noAccessibility
     case unauthorized
+    case identityUnavailable
     case keyNotSet
     case unreachable(String)
     case unexpected(Int)
@@ -67,8 +82,9 @@ public enum MacState: Equatable {
         case .locked: return "locked (screen is locked)"
         case .secureInput: return "secure-input (password field focused)"
         case .noAccessibility: return "needs Accessibility approval"
-        case .unauthorized: return "wrong key"
-        case .keyNotSet: return "no key set on that Mac"
+        case .unauthorized: return "refused (a different tailnet user than that Mac, or a wrong key)"
+        case .identityUnavailable: return "that Mac cannot verify who is calling (its Tailscale is not answering)"
+        case .keyNotSet: return "older daemon: it still needs a key"
         case .unreachable(let why): return "unreachable (\(why))"
         case .unexpected(let code): return "unexpected HTTP \(code)"
         }
@@ -116,10 +132,12 @@ public enum InserterClient {
             let version = object["version"] as? String
             let listen = object["listen"] as? [String] ?? []
             if object["accessibility"] as? Bool == false { return (.noAccessibility, name, version, listen) }
+            if object["identity_ok"] as? Bool == false { return (.identityUnavailable, name, version, listen) }
             if object["screen_locked"] as? Bool == true { return (.locked, name, version, listen) }
             if object["secure_input"] as? Bool == true { return (.secureInput, name, version, listen) }
             return (.ready, name, version, listen)
         case 401: return (.unauthorized, nil, nil, [])
+        case 503 where object["error"] as? String == "identity_unavailable": return (.identityUnavailable, nil, nil, [])
         case 503 where object["error"] as? String == "key_not_configured": return (.keyNotSet, nil, nil, [])
         default: return (.unexpected(httpStatus), nil, nil, [])
         }
@@ -138,11 +156,19 @@ public enum InserterClient {
         public var httpStatus: Int?
         public var summary: String
         public var inserted: Bool
+        /// "confirmed" or "unconfirmed" when the daemon said which.
+        public var delivery: String?
+
+        public init(httpStatus: Int?, summary: String, inserted: Bool, delivery: String? = nil) {
+            self.httpStatus = httpStatus; self.summary = summary; self.inserted = inserted; self.delivery = delivery
+        }
     }
 
     public static func sendText(_ text: String, to mac: KnownMac, id: String = UUID().uuidString,
-                                source: String = "cli", timeout: TimeInterval = 10) -> SendResult {
-        let payload = try? JSONSerialization.data(withJSONObject: ["id": id, "text": text, "source": source])
+                                source: String = "cli", method: String? = nil, timeout: TimeInterval = 10) -> SendResult {
+        var object: [String: Any] = ["id": id, "text": text, "source": source]
+        if let method = method { object["method"] = method }
+        let payload = try? JSONSerialization.data(withJSONObject: object)
         switch request(mac, method: "POST", path: "/text", body: payload, timeout: timeout) {
         case .failure(let e): return SendResult(httpStatus: nil, summary: "unreachable (\(e.message))", inserted: false)
         case .success(let (code, body)): return interpretSend(httpStatus: code, body: body)
@@ -152,13 +178,22 @@ public enum InserterClient {
     public static func interpretSend(httpStatus: Int, body: Data) -> SendResult {
         let object = (try? JSONSerialization.jsonObject(with: body) as? [String: Any]) ?? [:]
         switch httpStatus {
-        case 200: return SendResult(httpStatus: 200, summary: "inserted (\(object["method"] as? String ?? "?"))", inserted: true)
-        case 401: return SendResult(httpStatus: 401, summary: "wrong key for that Mac", inserted: false)
+        case 200:
+            let method = object["method"] as? String ?? "?"
+            let delivery = object["delivery"] as? String
+            let summary = delivery == "unconfirmed"
+                ? "sent via \(method); arrival could not be confirmed (a key press, or an app that does not expose its text)"
+                : "inserted (\(method)\(delivery == "confirmed" ? ", confirmed" : ""))"
+            return SendResult(httpStatus: 200, summary: summary, inserted: true, delivery: delivery)
+        case 502: return SendResult(httpStatus: 502, summary: "not delivered: the focused field did not change", inserted: false)
+        case 401: return SendResult(httpStatus: 401, summary: "refused: this device is not the same tailnet user as that Mac, and no valid key was given (if you use a key it is the real key, not the key file's contents: `macs show-key ALIAS` on the Mac that ran `macs add`)", inserted: false)
         case 409: return SendResult(httpStatus: 409, summary: "secure input is on - nothing inserted", inserted: false)
         case 423: return SendResult(httpStatus: 423, summary: "screen is locked - nothing inserted", inserted: false)
         case 503:
-            let why = object["error"] as? String == "accessibility_not_granted"
-                ? "Accessibility is not approved on that Mac" : "that Mac has no key set"
+            let error = object["error"] as? String
+            let why = error == "accessibility_not_granted" ? "Accessibility is not approved on that Mac"
+                : error == "identity_unavailable" ? "that Mac cannot verify who is calling (its Tailscale is not answering)"
+                : "that Mac has no key set (older daemon)"
             return SendResult(httpStatus: 503, summary: why, inserted: false)
         default: return SendResult(httpStatus: httpStatus, summary: "HTTP \(httpStatus): \(object["message"] as? String ?? "failed")", inserted: false)
         }
@@ -166,14 +201,14 @@ public enum InserterClient {
 
     struct NetworkError: Error { var message: String }
 
-    private static func request(_ mac: KnownMac, method: String, path: String, body: Data?,
-                                timeout: TimeInterval) -> Result<(Int, Data), NetworkError> {
+    fileprivate static func request(_ mac: KnownMac, method: String, path: String, body: Data?,
+                                    timeout: TimeInterval, sendKey: Bool = true) -> Result<(Int, Data), NetworkError> {
         guard let url = URL(string: "http://\(mac.host):\(mac.port)\(path)") else {
             return .failure(NetworkError(message: "bad host"))
         }
         var req = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: timeout)
         req.httpMethod = method
-        req.setValue(mac.key, forHTTPHeaderField: "X-Dictation-Key")
+        if sendKey, !mac.key.isEmpty { req.setValue(mac.key, forHTTPHeaderField: "X-Dictation-Key") }
         if let body = body { req.httpBody = body; req.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         let sem = DispatchSemaphore(value: 0)
         var result: Result<(Int, Data), NetworkError> = .failure(NetworkError(message: "no response"))
@@ -209,4 +244,26 @@ func formatTable(_ reports: [MacReport]) -> String {
     return rows.map { row in
         row.enumerated().map { i, cell in i == 4 ? cell : cell.padding(toLength: widths[i], withPad: " ", startingAt: 0) }.joined(separator: "  ")
     }.joined(separator: "\n")
+}
+
+extension InserterClient {
+    /// Fetches what a daemon says about itself: /status with the key from elsewhere, or /health
+    /// (no key) on this Mac's loopback.
+    public static func snapshot(host: String, port: Int, key: String?, path: String, timeout: TimeInterval = 4) -> SnapshotOutcome {
+        let probe = KnownMac(alias: "-", host: host, port: port, key: key ?? "")
+        switch request(probe, method: "GET", path: path, body: nil, timeout: timeout, sendKey: key != nil) {
+        case .failure(let e): return .unreachable(e.message)
+        case .success(let (code, body)):
+            switch code {
+            case 200: return DaemonSnapshot.parse(body).map { .ok($0) } ?? .unexpected(200)
+            case 401: return .unauthorized
+            case 403: return .forbidden
+            case 503 where (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["error"] as? String == "identity_unavailable":
+                return .identityUnavailable
+            case 503 where (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["error"] as? String == "key_not_configured":
+                return .keyNotSet
+            default: return .unexpected(code)
+            }
+        }
+    }
 }

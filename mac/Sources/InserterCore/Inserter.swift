@@ -9,26 +9,24 @@ public final class MacInserter: TextInserter {
 
     public init(restoreDelay: TimeInterval = 0.35) { self.restoreDelay = restoreDelay }
 
-    public func insert(_ text: String, method: InsertMethod?) throws -> InsertMethod {
+    public func insert(_ text: String, method: InsertMethod?) throws -> InsertOutcome {
         guard AXIsProcessTrusted() else { throw InsertError.accessibilityNotGranted }
-        switch method {
-        case .type:
-            try typeText(text)
-            return .type
-        case .paste:
-            try paste(text)
-            return .paste
-        case nil:
-            do {
-                try paste(text)
-                return .paste
-            } catch InsertError.accessibilityNotGranted {
-                throw InsertError.accessibilityNotGranted
-            } catch {
-                try typeText(text)
-                return .type
-            }
-        }
+        let flow = InsertionFlow(
+            readFocusedText: { FocusedField.text() },
+            readAfter: { text, before in
+                if before == nil { return nil }       // unreadable field: nothing to wait for
+                // Give the app up to a second to apply the keys; stop as soon as the text shows up.
+                var last = FocusedField.text()
+                for _ in 0..<20 {
+                    if let l = last, l != before, l.contains(text) { break }
+                    Thread.sleep(forTimeInterval: 0.05)
+                    last = FocusedField.text()
+                }
+                return last
+            },
+            paste: { try self.paste($0) },
+            type: { try self.typeText($0) })
+        return try flow.run(text, method: method)
     }
 
     // MARK: paste
@@ -121,4 +119,44 @@ public final class MacInserter: TextInserter {
 
 private extension UTF16 {
     static func isLeadSurrogate(_ u: UInt16) -> Bool { (0xD800...0xDBFF).contains(u) }
+}
+
+
+/// Reads the text of whatever has keyboard focus through the Accessibility API, when the app exposes it.
+public enum FocusedField {
+    /// The focused element, asked of the frontmost app directly: that works in more session types than
+    /// the system-wide query, which can answer "cannot complete".
+    static func focusedElement() -> AXUIElement? {
+        if let app = NSWorkspace.shared.frontmostApplication {
+            let appEl = AXUIElementCreateApplication(app.processIdentifier)
+            AXUIElementSetMessagingTimeout(appEl, 0.5)
+            var focused: CFTypeRef?
+            let e = AXUIElementCopyAttributeValue(appEl, kAXFocusedUIElementAttribute as CFString, &focused)
+            if e == .success, let f = focused { return (f as! AXUIElement) }
+            debug("frontmost app (\(app.localizedName ?? "?")) focused element: AXError \(e.rawValue)")
+        }
+        let system = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(system, 0.5)
+        var focused: CFTypeRef?
+        let e = AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused)
+        if e == .success, let f = focused { return (f as! AXUIElement) }
+        debug("system-wide focused element: AXError \(e.rawValue)")
+        return nil
+    }
+
+    static func debug(_ message: String) {
+        if ProcessInfo.processInfo.environment["GREENFIELD_AX_DEBUG"] != nil {
+            FileHandle.standardError.write(Data("ax: \(message)\n".utf8))
+        }
+    }
+
+    public static func text() -> String? {
+        guard let el = focusedElement() else { return nil }
+        AXUIElementSetMessagingTimeout(el, 0.5)
+        var value: CFTypeRef?
+        let e = AXUIElementCopyAttributeValue(el, kAXValueAttribute as CFString, &value)
+        guard e == .success else { debug("value: AXError \(e.rawValue)"); return nil }
+        if !(value is String) { debug("value is not a string") }
+        return value as? String
+    }
 }

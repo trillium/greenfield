@@ -3,6 +3,7 @@ included:
   - Spike
 excluded:
   - Spike/Audio
+  - mac
   - build
   - DerivedData
 disabled_rules:

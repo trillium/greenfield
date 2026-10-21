@@ -1,0 +1,259 @@
+import XCTest
+@testable import InserterCore
+
+final class HealthTests: XCTestCase {
+    func snap(listen: [String] = ["100.84.99.99:47821", "127.0.0.1:47821"], accessibility: Bool = true, locked: Bool = false,
+              secure: Bool = false, key: Bool = true, identity: Bool = true, version: String = "0.2.0",
+              insert: CanInsert.State = .ok,
+              appCompat: AppCompat = AppCompat(ok: true, message: "the newest app seen (0.2.0, 2 minutes ago) is compatible with daemon 0.2.0", fix: "")) -> DaemonSnapshot {
+        DaemonSnapshot(name: "m", version: version, listen: listen, accessibility: accessibility, screenLocked: locked,
+                       secureInput: secure, keyConfigured: key, executable: nil, pid: 42,
+                       auth: "tailnet", identityOK: identity, tailnetUser: "me@example",
+                       canInsert: CanInsert(state: insert, at: Date().addingTimeInterval(-120), source: "selftest", detail: "the field stayed empty"),
+                       minClientVersion: "0.2.0", appCompatible: appCompat,
+                       build: BuildIdentity(version: version, commit: "abc1234", binarySha: "0123456789abcdef", startedAt: nil), uptime: 600)
+    }
+    let local = HealthSubject.local(port: 47821)
+    let remote = HealthSubject.remote(alias: "book", host: "book.ts.net", port: 47821)
+
+    func checks(_ o: SnapshotOutcome, _ s: HealthSubject? = nil) -> [HealthCheck] {
+        snapshotChecks(o, subject: s ?? local, localVersion: "0.2.0")
+    }
+    func status(_ cs: [HealthCheck], _ id: String) -> HealthCheck.Status? { cs.first { $0.id == id }?.status }
+
+    func testAllGoodIsHealthy() {
+        let cs = checks(.ok(snap()))
+        XCTAssertTrue(isHealthy(cs))
+        XCTAssertEqual(cs.map(\.id), ["daemon", "listening", "auth", "accessibility", "unlocked", "secure-input", "version", "app-compatible", "can-insert"])
+        XCTAssertTrue(formatHealth(label: "mini0", checks: cs).hasPrefix("mini0: HEALTHY"))
+    }
+
+    func testEachProblemFailsOnlyItsCheck() {
+        XCTAssertEqual(status(checks(.ok(snap(accessibility: false))), "accessibility"), .fail)
+        XCTAssertEqual(status(checks(.ok(snap(locked: true))), "unlocked"), .fail)
+        XCTAssertEqual(status(checks(.ok(snap(secure: true))), "secure-input"), .fail)
+        XCTAssertEqual(status(checks(.ok(snap(identity: false))), "auth"), .fail)
+        XCTAssertEqual(status(checks(.ok(snap(key: false))), "auth"), .pass)       // no key is healthy
+        XCTAssertEqual(status(checks(.ok(snap(listen: ["127.0.0.1:47821"]))), "listening"), .fail)
+        XCTAssertEqual(status(checks(.ok(snap(listen: ["100.84.99.99:47821"]))), "listening"), .fail)
+        XCTAssertEqual(status(checks(.ok(snap(listen: ["0.0.0.0:47821", "127.0.0.1:47821", "100.84.99.99:47821"]))), "listening"), .fail)
+        for bad in [snap(accessibility: false), snap(locked: true), snap(secure: true), snap(identity: false)] {
+            XCTAssertFalse(isHealthy(checks(.ok(bad))))
+        }
+        XCTAssertEqual(status(checks(.ok(snap(accessibility: false))), "daemon"), .pass)
+    }
+
+    func testUnreachableSkipsTheRest() {
+        let cs = checks(.unreachable("connection refused"))
+        XCTAssertEqual(status(cs, "daemon"), .fail)
+        XCTAssertTrue(cs.dropFirst().allSatisfy { $0.status == .skip })
+        XCTAssertFalse(isHealthy(cs))
+    }
+
+    func testAuthProblemsOnRemote() {
+        XCTAssertEqual(status(checks(.unauthorized, remote), "auth"), .fail)
+        XCTAssertTrue(checks(.unauthorized, remote).first { $0.id == "auth" }!.fix.contains("same Tailscale user"))
+        XCTAssertEqual(status(checks(.identityUnavailable, remote), "auth"), .fail)
+        XCTAssertEqual(status(checks(.keyNotSet, remote), "auth"), .fail)           // an older daemon
+        XCTAssertEqual(status(checks(.unauthorized, remote), "daemon"), .pass)
+    }
+
+    func testOlderDaemonIsExplained() {
+        let c = checks(.unexpected(404)).first { $0.id == "auth" }!
+        XCTAssertTrue(c.detail.contains("older version"))
+        XCTAssertTrue(c.fix.contains("make -C mac install"))
+    }
+
+    func testVersionMismatchWarnsOnlyForRemote() {
+        XCTAssertEqual(status(checks(.ok(snap(version: "0.0.9")), remote), "version"), .warn)
+        XCTAssertEqual(status(checks(.ok(snap(version: "0.0.9"))), "version"), .pass)
+    }
+
+    func testEveryFailureHasWhatWhyAndFix() {
+        let outcomes: [(SnapshotOutcome, HealthSubject)] = [
+            (.ok(snap(accessibility: false, locked: true, secure: true, identity: false, version: "9")), remote),
+            (.ok(snap(listen: ["0.0.0.0:1"])), local), (.unreachable("x"), local), (.unreachable("x"), remote),
+            (.unauthorized, remote), (.identityUnavailable, remote), (.keyNotSet, remote), (.unexpected(500), local), (.forbidden, local),
+        ]
+        for (o, s) in outcomes {
+            for c in snapshotChecks(o, subject: s, localVersion: "0.2.0") where c.status == .fail || c.status == .warn {
+                XCTAssertFalse(c.detail.isEmpty, c.id); XCTAssertFalse(c.why.isEmpty, c.id); XCTAssertFalse(c.fix.isEmpty, c.id)
+            }
+        }
+    }
+
+    func testDoctorOutputExplains() {
+        let out = formatDoctor(label: "book", checks: checks(.ok(snap(accessibility: false)), remote))
+        XCTAssertTrue(out.contains("1 problem found"))
+        XCTAssertTrue(out.contains("wrong:")); XCTAssertTrue(out.contains("why:")); XCTAssertTrue(out.contains("fix:"))
+        XCTAssertTrue(out.contains("Privacy & Security > Accessibility"))
+        XCTAssertTrue(formatDoctor(label: "x", checks: checks(.ok(snap()))).contains("all 9 checks passed"))
+    }
+
+    func testParseSnapshot() {
+        let body = #"{"version":"0.1.0","name":"m","listen":["127.0.0.1:1"],"accessibility":true,"screen_locked":false,"secure_input":true,"key_configured":false,"pid":7,"executable":"/x"}"#
+        let s = DaemonSnapshot.parse(Data(body.utf8))
+        XCTAssertEqual(s?.secureInput, true); XCTAssertEqual(s?.keyConfigured, false)
+        XCTAssertEqual(s?.pid, 7); XCTAssertEqual(s?.executable, "/x")
+        XCTAssertEqual(DaemonSnapshot.parse(Data(#"{"version":"1","accessibility":true}"#.utf8))?.keyConfigured, true)  // /status implies a key
+        XCTAssertNil(DaemonSnapshot.parse(Data("nope".utf8)))
+    }
+
+    // MARK: host checks
+
+    func facts(_ edit: (inout HostFacts) -> Void = { _ in }) -> HostFacts {
+        var f = HostFacts(tailnetIPv4: "100.84.99.99", plistPath: "/h/Library/LaunchAgents/x.plist", plistText: "<plist/>",
+                          launchdLoaded: true, launchdPid: 123, installedBinary: "/h/.local/share/greenfield-inserter/greenfield-inserter",
+                          binaryExecutable: true, configDir: "/h/.config/greenfield-inserter", dirMode: 0o700,
+                          keyFile: "/h/.config/greenfield-inserter/key", keyFileExists: true, keyFileMode: 0o600,
+                          keyFormatValid: true, launchdState: "running", launchdRuns: 1, installedSha: "0123456789abcdef")
+        edit(&f)
+        return f
+    }
+
+    func testHostAllGood() {
+        let cs = hostChecks(facts(), daemonExecutable: facts().installedBinary, running: snap().build, uptime: 600)
+        XCTAssertTrue(isHealthy(cs), "\(cs.filter { $0.status != .pass })")
+    }
+
+    func testHostProblems() {
+        func failing(_ edit: (inout HostFacts) -> Void, exe: String? = nil) -> [String] {
+            hostChecks(facts(edit), daemonExecutable: exe).filter { $0.status == .fail }.map(\.id)
+        }
+        XCTAssertEqual(failing { $0.tailnetIPv4 = nil }, ["tailnet"])
+        XCTAssertEqual(failing { $0.binaryExecutable = false }, ["binary"])
+        XCTAssertEqual(failing { $0.plistText = nil }, ["plist"])
+        XCTAssertEqual(failing { $0.launchdLoaded = false; $0.launchdPid = nil }, ["launchd"])
+        XCTAssertEqual(failing { $0.launchdPid = nil }, ["launchd"])
+        XCTAssertEqual(failing { $0.keyFileExists = false }, [])          // the key is optional now
+        XCTAssertEqual(failing { $0.keyFormatValid = false }, ["keyfile"])
+        XCTAssertEqual(failing { $0.keyFileMode = 0o644 }, ["keyfile"])
+        XCTAssertEqual(failing { $0.dirMode = 0o755 }, ["keyfile"])
+        XCTAssertEqual(failing({ _ in }, exe: "/tmp/other/greenfield-inserter"), ["path"])
+    }
+
+    func testRunningBuildMustBeTheInstalledFile() {
+        func ids(_ edit: (inout HostFacts) -> Void, running: BuildIdentity?, uptime: Int = 600) -> [String] {
+            hostChecks(facts(edit), daemonExecutable: nil, running: running, uptime: uptime).filter { $0.status == .fail }.map(\.id)
+        }
+        let same = BuildIdentity(version: "0.2.0", commit: "a", binarySha: "0123456789abcdef", startedAt: nil)
+        let old = BuildIdentity(version: "0.1.0", commit: "b", binarySha: "ffffffffffffffff", startedAt: nil)
+        XCTAssertEqual(ids({ _ in }, running: same), [])
+        XCTAssertEqual(ids({ _ in }, running: old), ["running-build"])
+        let c = hostChecks(facts(), daemonExecutable: nil, running: old, uptime: 5).first { $0.id == "running-build" }!
+        XCTAssertTrue(c.detail.contains("restart needed")); XCTAssertTrue(c.fix.contains("restart"))
+        XCTAssertEqual(ids({ _ in }, running: nil), [])                      // not running is reported elsewhere
+        // launchd throttling / crash loops
+        XCTAssertEqual(ids({ $0.launchdState = "spawn scheduled" }, running: same), ["launchd-throttle"])
+        XCTAssertEqual(ids({ $0.launchdRuns = 9 }, running: same, uptime: 4), ["launchd-throttle"])
+        XCTAssertEqual(ids({ $0.launchdRuns = 9 }, running: same, uptime: 4000), [])        // many restarts long ago is fine
+    }
+
+    func testJudgeRunning() {
+        let b = BuildIdentity(version: "1", commit: "c", binarySha: "aa", startedAt: nil)
+        XCTAssertEqual(judgeRunning(running: b, installedSha: "aa"), .match)
+        XCTAssertEqual(judgeRunning(running: b, installedSha: "bb"), .restartNeeded(runningSha: "aa", installedSha: "bb"))
+        XCTAssertEqual(judgeRunning(running: nil, installedSha: "bb"), .notRunning)
+        if case .unknown = judgeRunning(running: b, installedSha: nil) {} else { XCTFail() }
+    }
+
+    func testAppCompatibleLine() {
+        XCTAssertEqual(status(checks(.ok(snap())), "app-compatible"), .pass)
+        let none = checks(.ok(snap(appCompat: AppCompat(ok: true, message: "no app has connected yet", fix: ""))))
+        XCTAssertEqual(status(none, "app-compatible"), .pass)                                  // a note, not a failure
+        XCTAssertTrue(none.first { $0.id == "app-compatible" }!.detail.hasPrefix("note:"))
+        let bad = checks(.ok(snap(appCompat: AppCompat(ok: false, message: "the newest app seen is older", fix: "Update the app"))))
+        XCTAssertEqual(status(bad, "app-compatible"), .warn)
+        XCTAssertEqual(bad.first { $0.id == "app-compatible" }!.fix, "Update the app")
+    }
+
+    func testRemoteVersionUsesTheSemverRule() {
+        XCTAssertEqual(status(checks(.ok(snap(version: "0.2.9")), remote), "version"), .pass)   // patch is free
+        XCTAssertEqual(status(checks(.ok(snap(version: "0.1.0")), remote), "version"), .warn)   // another 0.x line
+        XCTAssertEqual(status(checks(.ok(snap(version: "0.9.0"))), "version"), .pass)           // locally not compared
+    }
+
+    func testHostFailuresExplainThemselves() {
+        let bad = facts { $0.tailnetIPv4 = nil; $0.binaryExecutable = false; $0.plistText = nil; $0.launchdLoaded = false
+            $0.launchdPid = nil; $0.keyFileExists = false }
+        for c in hostChecks(bad, daemonExecutable: "/other") where c.status == .fail {
+            XCTAssertFalse(c.why.isEmpty, c.id); XCTAssertFalse(c.fix.isEmpty, c.id)
+        }
+    }
+
+    func testPeerChecks() {
+        let mac = KnownMac(alias: "book", host: "book.ts.net", key: "SECRET")
+        let good = MacReport(mac: mac, state: .ready, name: "b", version: "0.1.0", listen: ["127.0.0.1:1"])
+        let bad = MacReport(mac: mac, state: .unreachable("timeout"), name: nil, version: nil)
+        XCTAssertEqual(peerChecks([good], localVersion: "0.2.0").first?.status, .pass)
+        XCTAssertEqual(peerChecks([bad], localVersion: "0.2.0").first?.status, .fail)
+    }
+
+    func testNothingEverPrintsAKey() {
+        let secret = "SECRET-KEY-VALUE"
+        let mac = KnownMac(alias: "book", host: "book.ts.net", key: secret)
+        let reports = [MacReport(mac: mac, state: .unauthorized, name: nil, version: nil)]
+        var all = peerChecks(reports, localVersion: "0.2.0")
+        for o: SnapshotOutcome in [.unauthorized, .identityUnavailable, .keyNotSet, .unreachable("x"), .ok(snap(identity: false))] {
+            all += snapshotChecks(o, subject: .remote(alias: "book", host: "book.ts.net", port: 1), localVersion: "0.2.0")
+        }
+        all += hostChecks(facts { $0.keyFileExists = false }, daemonExecutable: nil)
+        let text = formatDoctor(label: "x", checks: all) + formatHealth(label: "x", checks: all)
+        XCTAssertFalse(text.contains(secret))
+    }
+
+    func testKeyFileNoteIsShownWhereKeysComeUp() {
+        XCTAssertTrue(keyFileNote.contains("hash")); XCTAssertTrue(keyFileNote.contains("macs show-key"))
+        // health and doctor output
+        let ok = checks(.ok(snap()))
+        XCTAssertTrue(formatHealth(label: "m", checks: ok).contains(keyFileNote))      // snap() has a key set
+        XCTAssertTrue(formatDoctor(label: "m", checks: ok).contains(keyFileNote))
+        // a refused key (remote 401) carries it in the explanation
+        let refused = checks(.unauthorized, remote).first { $0.id == "auth" }!
+        XCTAssertTrue(refused.why.contains(keyFileNote))
+        XCTAssertTrue(formatDoctor(label: "m", checks: checks(.unauthorized, remote)).contains("shown once"))
+        // peer check on a Mac that rejects our key
+        let mac = KnownMac(alias: "book", host: "h", key: "k")
+        let peer = peerChecks([MacReport(mac: mac, state: .unauthorized, name: nil, version: nil)], localVersion: "0.2.0")[0]
+        XCTAssertTrue(peer.why.contains(keyFileNote))
+        // host key-file check shows it too
+        XCTAssertTrue(formatDoctor(label: "m", checks: hostChecks(facts(), daemonExecutable: nil)).contains(keyFileNote))   // key file present
+        // the daemon's own 401 and the client's reading of it say it too
+        XCTAssertTrue(InserterClient.interpretSend(httpStatus: 401, body: Data()).summary.contains("macs show-key"))
+        // and the note never leaks a key
+        XCTAssertFalse(keyFileNote.contains("sha256:"))
+    }
+
+    func testCanInsertIsTheLastLineAndNeedsEvidence() {
+        let ok = checks(.ok(snap()))
+        XCTAssertEqual(ok.last?.id, "can-insert"); XCTAssertEqual(ok.last?.status, .pass)
+        XCTAssertTrue(ok.last!.detail.contains("2 minutes ago")); XCTAssertTrue(ok.last!.detail.contains("selftest"))
+        XCTAssertTrue(formatHealth(label: "m", checks: ok).contains("Can actually insert text"))
+        // no evidence yet, or a failed attempt, makes the Mac unhealthy and says how to fix it
+        for state in [CanInsert.State.unknown, .failed] {
+            let cs = checks(.ok(snap(insert: state)))
+            XCTAssertFalse(isHealthy(cs))
+            XCTAssertEqual(cs.last?.status, .fail)
+            XCTAssertFalse(cs.last!.why.isEmpty); XCTAssertTrue(cs.last!.fix.contains("selftest") || cs.last!.fix.contains("doctor"))
+        }
+        // a daemon too old to report it is skipped, not passed
+        var old = snap(); old.canInsert = nil
+        XCTAssertEqual(checks(.ok(old)).last?.status, .skip)
+    }
+
+    func testGrantAfterStartNeedsARestart() {
+        var late = snap(); late.accessibilityAtStart = false
+        let c = checks(.ok(late)).first { $0.id == "accessibility" }!
+        XCTAssertEqual(c.status, .fail)
+        XCTAssertTrue(c.detail.contains("after the daemon started")); XCTAssertTrue(c.fix.contains("restart"))
+        var fine = snap(); fine.accessibilityAtStart = true
+        XCTAssertEqual(checks(.ok(fine)).first { $0.id == "accessibility" }?.status, .pass)
+        XCTAssertEqual(checks(.ok(snap())).first { $0.id == "accessibility" }?.status, .pass)      // older daemons: not reported
+    }
+
+    func testKeyNoteOnlyWhenAKeyMattersOrFails() {
+        XCTAssertFalse(formatHealth(label: "m", checks: checks(.ok(snap(key: false)))).contains("note:"))
+        XCTAssertTrue(formatHealth(label: "m", checks: checks(.ok(snap(key: true)))).contains("note:"))
+        XCTAssertTrue(formatDoctor(label: "m", checks: checks(.unauthorized, remote)).contains("note:"))
+    }
+}

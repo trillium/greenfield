@@ -1,0 +1,52 @@
+{
+  "_comment" : "Recorded from the real handler by ContractTests (RECORD_FIXTURES=1). HTTP status 200. The phone's tests parse this file.",
+  "_http_status" : 200,
+  "accessibility" : true,
+  "accessibility_at_start" : true,
+  "app_compatible" : {
+    "fix" : "",
+    "message" : "no app has connected yet",
+    "ok" : true
+  },
+  "auth" : "tailnet",
+  "build" : {
+    "binary_sha" : "0123456789abcdef",
+    "commit" : "abc1234",
+    "started_at" : "2027-01-15T08:00:00Z",
+    "version" : "0.2.0"
+  },
+  "can_insert" : false,
+  "clients" : [
+
+  ],
+  "delivery" : {
+    "can_insert" : false,
+    "fix" : "On the computer: run `\/Users\/example\/.local\/share\/greenfield-inserter\/greenfield-inserter selftest` (opens a small window for a few seconds), or send one real text and `health` will pick up the confirmed delivery.",
+    "message" : "no delivery has been confirmed since this daemon started",
+    "ok" : false,
+    "state" : "unknown",
+    "text" : "no delivery has been confirmed since this daemon started"
+  },
+  "delivery_fix" : "On the computer: run `\/Users\/example\/.local\/share\/greenfield-inserter\/greenfield-inserter selftest` (opens a small window for a few seconds), or send one real text and `health` will pick up the confirmed delivery.",
+  "delivery_message" : "no delivery has been confirmed since this daemon started",
+  "evidence" : {
+    "detail" : "no delivery has been confirmed since this daemon started",
+    "state" : "unknown"
+  },
+  "identity_ok" : true,
+  "inserted_count" : 0,
+  "key_configured" : true,
+  "listen" : [
+    "100.64.0.10:47821",
+    "127.0.0.1:47821"
+  ],
+  "min_client_version" : "0.2.0",
+  "name" : "Example Mac",
+  "ok" : true,
+  "screen_locked" : false,
+  "secure_input" : false,
+  "service" : "greenfield-inserter",
+  "tailnet_user" : "me@example",
+  "uptime_s" : 3600,
+  "version" : "0.2.0"
+}

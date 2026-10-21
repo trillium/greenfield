@@ -1,0 +1,19 @@
+{
+  "_comment" : "GET \/peers from the real handler (ContractTests, RECORD_FIXTURES=1). The phone reads peers[].name, address, version.",
+  "_http_status" : 200,
+  "ok" : true,
+  "peers" : [
+    {
+      "address" : "example.tail1234.ts.net",
+      "name" : "Example Mac",
+      "self" : true,
+      "version" : "0.2.0"
+    },
+    {
+      "address" : "studio.tail1234.ts.net",
+      "name" : "Studio Mac",
+      "self" : false,
+      "version" : "0.2.1"
+    }
+  ]
+}
