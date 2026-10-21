@@ -107,6 +107,12 @@ final class CompatibilityWireTests: XCTestCase {
         try XCTSkipIf(files.isEmpty, "mac/Tests/Fixtures/status-*.json has not landed yet")
         for file in files {
             let data = try Data(contentsOf: folder.appendingPathComponent(file))
+            let recorded = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+            if let code = recorded["_http_status"] as? Int, code != 200 {
+                // A refusal sample: the phone must not read it as a healthy computer.
+                if case .ready = ReceiverClient.interpretHealth(status: code, data: data) { XCTFail("\(file) must not read as ready") }
+                continue
+            }
             guard case .ready(let status) = ReceiverClient.interpretHealth(status: 200, data: data) else {
                 return XCTFail("\(file) is not ready")
             }
