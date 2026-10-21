@@ -5,6 +5,9 @@
 # the static libraries are build outputs and the model is personal training data. project.yml links the libraries and bundles
 # the model from .parrot-core/.
 #
+# It also stages the model's pattern catalogue (bundled with the app: the Levels screen rewrites its trigger levels) and the recorded clip the
+# tests replay through the detector (bundled with the test target only).
+#
 # Usage: fetch-core.sh [--build]      --build runs `make lib-ios` in the sibling checkout first
 # Environment: PARROT_APP_DIR (default ../parrot-app, then the sibling of this repo's main checkout), PARROT_MODEL (a model file)
 set -euo pipefail
@@ -26,12 +29,19 @@ echo "parrot-app: $app_dir"
 
 if [ "${1:-}" = "--build" ]; then make -C "$app_dir" lib-ios >/dev/null; fi
 
-mkdir -p "$CORE_DIR/include" "$CORE_DIR/device" "$CORE_DIR/sim" "$CORE_DIR/resources"
+mkdir -p "$CORE_DIR/include" "$CORE_DIR/device" "$CORE_DIR/sim" "$CORE_DIR/resources" "$CORE_DIR/fixtures"
 cp "$app_dir/parrot-core/include/parrot.h" "$CORE_DIR/include/parrot.h"
 for slice in device:aarch64-apple-ios sim:aarch64-apple-ios-sim; do
   src="$app_dir/target/${slice#*:}/release/libparrot_core.a"
   [ -f "$src" ] || die "missing $src; run: scripts/fetch-core.sh --build"
   cp "$src" "$CORE_DIR/${slice%%:*}/libparrot_core.a"
+done
+
+[ -f "$app_dir/config/patterns.json" ] || die "missing $app_dir/config/patterns.json"
+cp "$app_dir/config/patterns.json" "$CORE_DIR/resources/patterns.json"
+for f in session_clip.wav session_clip.expected.json; do
+  [ -f "$app_dir/tests/fixtures/$f" ] || die "missing fixture $app_dir/tests/fixtures/$f"
+  cp "$app_dir/tests/fixtures/$f" "$CORE_DIR/fixtures/$f"
 done
 
 model=""
@@ -42,6 +52,6 @@ if [ -n "$model" ]; then cp "$model" "$CORE_DIR/resources/parrot-model.bin"
 elif [ ! -f "$CORE_DIR/resources/parrot-model.bin" ]; then die "no model found; set PARROT_MODEL=/path/to/parrot-model.bin"; fi
 
 echo "staged in .parrot-core:"
-for f in include/parrot.h device/libparrot_core.a sim/libparrot_core.a resources/parrot-model.bin; do
+for f in include/parrot.h device/libparrot_core.a sim/libparrot_core.a resources/parrot-model.bin resources/patterns.json fixtures/session_clip.wav; do
   printf '  %-32s %s bytes\n' "$f" "$(wc -c < "$CORE_DIR/$f" | tr -d ' ')"
 done

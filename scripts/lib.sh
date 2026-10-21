@@ -34,7 +34,8 @@ require_tool() { command -v "$1" >/dev/null 2>&1 || die "required tool not found
 
 generate_project() {
   require_tool xcodegen "brew install xcodegen"
-  [ -f "$ROOT/.parrot-core/device/libparrot_core.a" ] || "$ROOT/scripts/fetch-core.sh"  # detector libraries and model, git-ignored
+  [ -f "$ROOT/.parrot-core/device/libparrot_core.a" ] && [ -f "$ROOT/.parrot-core/resources/patterns.json" ] \
+    && [ -f "$ROOT/.parrot-core/fixtures/session_clip.wav" ] || "$ROOT/scripts/fetch-core.sh"  # detector libraries and model, git-ignored
   "$ROOT/scripts/version.sh" --write  # stamp every build from git tags; no hand edits
   PARROT_KIT_DIR="$("$ROOT/scripts/kit-dir.sh")"  # the shared ParrotKit package, a local checkout
   export PARROT_KIT_DIR

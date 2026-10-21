@@ -81,6 +81,9 @@ targets:
       - App/Sources/Support/LogBundle.swift
       - path: Spike/Phrases/phrases.json
         buildPhase: none
+      # Staged by `make core` (never committed): the recorded clip the detector tests replay.
+      - path: .parrot-core/fixtures
+        buildPhase: resources
     dependencies:
       - target: DictationApp
       - package: ParrotKit

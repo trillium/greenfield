@@ -34,7 +34,7 @@ echo "== ParrotKit (shared package) =="
 if kit="$("$ROOT/scripts/kit-dir.sh" 2>/dev/null)"; then pass "ParrotKit checkout at $kit"; else fail "ParrotKit checkout not found: put it at ../parrot-kit or set PARROT_KIT_DIR"; fi
 
 echo "== Sound detector (make core) =="
-for f in include/parrot.h device/libparrot_core.a sim/libparrot_core.a resources/parrot-model.bin; do
+for f in include/parrot.h device/libparrot_core.a sim/libparrot_core.a resources/parrot-model.bin resources/patterns.json fixtures/session_clip.wav; do
   if [ -f "$ROOT/.parrot-core/$f" ]; then pass ".parrot-core/$f staged"; else fail ".parrot-core/$f missing: run 'make core' (needs the sibling parrot-app checkout)"; fi
 done
 
