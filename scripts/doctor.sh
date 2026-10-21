@@ -28,6 +28,7 @@ else fail "no iPhone simulator (xcodebuild -downloadPlatform iOS)"; fi
 command -v xcodegen >/dev/null 2>&1 && pass "xcodegen $(xcodegen --version | sed 's/Version: //')" || fail "xcodegen missing (brew install xcodegen)"
 command -v swiftlint >/dev/null 2>&1 && pass "swiftlint $(swiftlint --version)" || warn "swiftlint missing (brew install swiftlint); make check needs it"
 command -v shellcheck >/dev/null 2>&1 && pass "shellcheck present" || warn "shellcheck missing (brew install shellcheck); make check lints scripts with it"
+command -v go >/dev/null 2>&1 && pass "$(go version | cut -d' ' -f3-4)" || warn "go missing (brew install go); make check builds the Windows daemon (windows/) with it"
 command -v gitleaks >/dev/null 2>&1 && pass "gitleaks present" || warn "gitleaks missing (brew install gitleaks); the pre-commit second-opinion scan is skipped"
 
 echo "== ParrotKit (shared package) =="
