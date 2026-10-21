@@ -9,6 +9,8 @@ usage:
   greenfield-inserter key create [--force] [--out-file PATH]
                                               OPTIONAL: make a key for devices of other tailnet users; shown once
   greenfield-inserter key status              say whether the optional key is set (never shows it)
+  greenfield-inserter pair [--list | --revoke ID | --revoke-all] [--port N]
+                                              a one-time code for a browser (the PWA) outside the tailnet; list or revoke paired devices
   greenfield-inserter name [set NAME | reset] show or change the name the phone displays
   greenfield-inserter macs add ALIAS HOST [--port N] [--key | --key-stdin] [--ssh USER@HOST]
                                               remember a Mac; no key is needed for your own tailnet user's devices
@@ -156,6 +158,47 @@ case "key":
     case "status":
         print(keys.isConfigured ? "optional key set (\(paths.keyFile.path))" : "no key set (not needed: devices of this Mac's tailnet user are authorized by identity)")
     default: fail(usage, code: 2)
+    }
+
+case "pair":
+    let port = Int(configuredPort(args))
+    func ask(_ method: String, _ path: String, _ body: [String: Any]? = nil) -> (status: Int, body: [String: Any]) {
+        guard let answer = InserterClient.local(port: port, method: method, path: path, body: body) else {
+            fail("the daemon is not answering on 127.0.0.1:\(port); start it (`greenfield-inserter serve`) or check `greenfield-inserter health`")
+        }
+        return answer
+    }
+    func ensureOK(_ answer: (status: Int, body: [String: Any])) {
+        guard !(answer.status == 404 && answer.body["error"] as? String == "not_found") else { fail("this daemon predates browser pairing; update it (`make -C mac install`)") }
+        guard answer.status == 200 else { fail("\(answer.body["message"] as? String ?? "HTTP \(answer.status)")") }
+    }
+    if args.contains("--list") {
+        let answer = ask("GET", "/pair/devices")
+        ensureOK(answer)
+        let list = answer.body["devices"] as? [[String: Any]] ?? []
+        if list.isEmpty { print("no paired devices") }
+        for d in list {
+            print("\(d["id"] as? String ?? "?")  \(d["name"] as? String ?? "?")  expires \(d["expires_at"] as? String ?? "?")  last seen \((d["last_seen"] as? String) ?? "never")")
+        }
+    } else if args.contains("--revoke-all") {
+        let answer = ask("POST", "/pair/revoke", ["all": true])
+        ensureOK(answer)
+        print("revoked \(answer.body["revoked"] as? Int ?? 0) device(s); any open code is gone too")
+    } else if let id = option("--revoke", in: args) {
+        ensureOK(ask("POST", "/pair/revoke", ["id": id]))
+        print("revoked \(id)")
+    } else {
+        let answer = ask("POST", "/pair/code")
+        ensureOK(answer)
+        let minutes = (answer.body["expires_in_s"] as? Int ?? 300) / 60
+        print("""
+        Pairing code for \(answer.body["name"] as? String ?? "this Mac"):
+
+            \(answer.body["code"] as? String ?? "?")
+
+        Type it into the Greenfield web app (Computers > Add computer) within \(minutes) minutes. It works once.
+        The browser gets a token for 24 hours that only sends text; `greenfield-inserter pair --list` shows it, `--revoke ID` ends it.
+        """)
     }
 
 case "logs":

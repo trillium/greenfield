@@ -42,7 +42,9 @@ public final class RequestHandler {
     public static var version: String { BuildInfo.version }
     public static let maxTextBytes = 256 * 1024
     /// The paths this daemon answers; anything else is logged as "(unknown)".
-    static let routes: Set<String> = Set(["/health", "/status", "/text", "/peers", "/logs"]).union(AssistEndpoints.paths.keys)
+    static let routes: Set<String> = Set(["/health", "/status", "/text", "/peers", "/logs"]).union(RequestHandler.pairPaths).union(AssistEndpoints.paths.keys)
+    /// One-time pairing of a browser that is not on the tailnet (the PWA): see `Pairing.swift`.
+    static let pairPaths: Set<String> = ["/pair", "/pair/code", "/pair/devices", "/pair/revoke"]
 
     private let keys: KeyVerifier
     private let probe: SystemProbe
@@ -55,6 +57,7 @@ public final class RequestHandler {
     private let clients: ClientRecord?
     private let discovery: ComputerDiscovery?
     private let assist: AssistEndpoints?
+    private let pairing: DevicePairing
     private let version: String
     private let minClientVersion: String
     private var build: BuildIdentity { RunningBuild.identity }
@@ -69,7 +72,7 @@ public final class RequestHandler {
     public init(keys: KeyVerifier, probe: SystemProbe, inserter: TextInserter, dedupe: DedupeCache = DedupeCache(),
                 name: @escaping () -> String, listening: @escaping () -> [String] = { [] },
                 identity: TailnetIdentity? = nil, record: DeliveryRecord? = nil, clients: ClientRecord? = nil, discovery: ComputerDiscovery? = nil,
-                assist: AssistEndpoints? = nil, version: String = BuildInfo.version, minClientVersion: String = BuildInfo.minClientVersion,
+                assist: AssistEndpoints? = nil, pairing: DevicePairing = PairingBook(), version: String = BuildInfo.version, minClientVersion: String = BuildInfo.minClientVersion,
                 logger: RequestLogger? = nil, logSource: LogSource? = nil, logLimiter: LogRateLimiter = LogRateLimiter(),
                 now: @escaping () -> Date = Date.init) {
         self.keys = keys
@@ -83,6 +86,7 @@ public final class RequestHandler {
         self.clients = clients
         self.discovery = discovery
         self.assist = assist
+        self.pairing = pairing
         self.version = version
         self.minClientVersion = minClientVersion
         self.logger = logger
@@ -100,8 +104,17 @@ public final class RequestHandler {
         return response
     }
 
-    private func route(_ request: HTTPRequest) -> HTTPResponse {
+    private func route(_ original: HTTPRequest) -> HTTPResponse {
+        var request = original
+        // A request that went through a reverse proxy (`tailscale serve`, the PWA's server) reaches us from loopback, but it is not the
+        // person at this Mac and its TCP peer says nothing about who is calling: it is neither local nor identifiable. Only a paired
+        // device's token lets it in. The tailnet-identity path below is untouched for every request that carries no proxy header.
+        if ProxiedRequest.isProxied(request) {
+            request.fromLoopback = false
+            request.peerAddress = nil
+        }
         if request.path == "/health" { return health(request) }
+        if RequestHandler.pairPaths.contains(request.path) { return pair(request) }
         let known = ["/status": "GET", "/text": "POST", "/peers": "GET", "/logs": "GET"].merging(AssistEndpoints.paths) { first, _ in first }
         guard let wanted = known[request.path] else {
             return .error(404, "not_found", "unknown path")
@@ -112,7 +125,7 @@ public final class RequestHandler {
         // Logs are for a person debugging, so a Mac with a wrong or old app still answers them: no app-version gate here.
         if request.path == "/logs" { return logs(request, via: via) }
         // The assist tools act on this Mac, so they are for this Mac's own tailnet user (or this Mac), never for the optional key.
-        if AssistEndpoints.handles(request.path), via == .key {
+        if AssistEndpoints.handles(request.path), via == .key || via == .token {
             return .error(403, "assist_need_same_user", "the assist tools are only for this Mac and devices of its tailnet user")
         }
         if let refused = checkAppVersion(request) { return refused }
@@ -132,10 +145,15 @@ public final class RequestHandler {
     /// Who may use the daemon: this Mac itself, any device of the same tailnet user as this Mac's own node
     /// (asked of the local Tailscale), or anyone presenting the optional key. If Tailscale cannot say who is
     /// calling and there is no valid key, the request is refused.
-    private enum Via { case loopback, sameUser, key }
+    private enum Via { case loopback, sameUser, key, token }
 
     private func authorize(_ request: HTTPRequest) -> (HTTPResponse?, Via) {
         if request.fromLoopback { return (nil, .loopback) }
+        // A paired device (the PWA) presents its token; a wrong, expired or revoked one is refused, never retried as something else.
+        if let presented = request.headers["x-greenfield-token"], !presented.isEmpty {
+            if pairing.verify(token: presented) != nil { return (nil, .token) }
+            return (.error(401, "invalid_token", "this device is not paired (the token is wrong, expired or revoked); pair it again with a new code from this Mac"), .token)
+        }
         var refusal: HTTPResponse
         if let peer = request.peerAddress, let identity = identity {
             switch identity.identify(peer) {
@@ -156,10 +174,79 @@ public final class RequestHandler {
         return (refusal, .key)
     }
 
+
+    /// One-time pairing (`Pairing.swift`). Asking for a code, listing and revoking are for the person at this Mac (loopback, no proxy
+    /// header): the `greenfield-inserter pair` command. Exchanging a code is open to whoever can reach the port, because the code is
+    /// the credential: short-lived, single use, burned by wrong guesses, rate limited. Nothing here logs a code or a token.
+    private func pair(_ request: HTTPRequest) -> HTTPResponse {
+        func wrongMethod(_ wanted: String) -> HTTPResponse {
+            var r = HTTPResponse.error(405, "method_not_allowed", "use \(wanted)")
+            r.headers["Allow"] = wanted
+            return r
+        }
+        let localOnly = HTTPResponse.error(403, "local_only", "this is only for the person at this Mac: run `greenfield-inserter pair`")
+        switch request.path {
+        case "/pair":
+            guard request.method == "POST" else { return wrongMethod("POST") }
+            guard let object = try? JSONSerialization.jsonObject(with: request.body) as? [String: Any],
+                  let code = object["code"] as? String, code.count <= 32 else {
+                return .error(400, "bad_request", "body must be {\"code\": \"ABCD-EFGH\", \"device\": \"name\"}")
+            }
+            switch pairing.redeem(code: code, device: (object["device"] as? String) ?? "") {
+            case .slowDown(let wait):
+                var r = HTTPResponse.error(429, "rate_limited", "too many attempts; try again in \(wait) seconds")
+                r.headers["Retry-After"] = String(wait)
+                return r
+            case .refused:
+                logger?.log("pair refused")
+                return .error(401, "pair_refused", "that code is wrong, already used or expired; ask for a new one at this Mac with `greenfield-inserter pair`")
+            case .paired(let token, let device):
+                logger?.log("paired device id=\(device.id)")
+                return .json(200, ["ok": true, "token": token, "device": device.json, "expires_in_s": Int(device.expiresAt.timeIntervalSince(now())),
+                                   "name": name(), "version": version])
+            }
+        case "/pair/code":
+            guard request.fromLoopback else { return localOnly }
+            guard request.method == "POST" else { return wrongMethod("POST") }
+            let issued = pairing.issueCode()
+            logger?.log("pair code issued")
+            return .json(200, ["ok": true, "code": issued.code, "expires_in_s": issued.expiresIn, "name": name()])
+        case "/pair/devices":
+            guard request.fromLoopback else { return localOnly }
+            guard request.method == "GET" else { return wrongMethod("GET") }
+            return .json(200, ["ok": true, "devices": pairing.devices().map { $0.json }])
+        default: // /pair/revoke
+            guard request.method == "POST" else { return wrongMethod("POST") }
+            if request.fromLoopback {
+                guard let object = try? JSONSerialization.jsonObject(with: request.body) as? [String: Any] else {
+                    return .error(400, "bad_request", "body must be {\"id\": \"...\"} or {\"all\": true}")
+                }
+                if object["all"] as? Bool == true {
+                    let n = pairing.revokeAll()
+                    logger?.log("pair revoked all devices=\(n)")
+                    return .json(200, ["ok": true, "revoked": n])
+                }
+                guard let id = object["id"] as? String, !id.isEmpty else {
+                    return .error(400, "bad_request", "body must be {\"id\": \"...\"} or {\"all\": true}")
+                }
+                guard pairing.revoke(id: id) else { return .error(404, "no_such_device", "no paired device has that id") }
+                logger?.log("pair revoked id=\(LogSafe.id(id))")
+                return .json(200, ["ok": true, "revoked": 1])
+            }
+            // A paired device may forget itself: its own token, nothing else.
+            guard let presented = request.headers["x-greenfield-token"], let device = pairing.verify(token: presented) else {
+                return .error(401, "unauthorized", "present this device's token, or run `greenfield-inserter pair --revoke` at this Mac")
+            }
+            pairing.revoke(id: device.id)
+            logger?.log("pair device left id=\(device.id)")
+            return .json(200, ["ok": true, "revoked": 1])
+        }
+    }
+
     /// The other Macs of this tailnet user that run the daemon, so a phone needs only one seed. Listing the tailnet is
     /// for this Mac's own user (or this Mac); a device that got in with the optional key may use /status and /text only.
     private func peers(via: Via) -> HTTPResponse {
-        guard via != .key else {
+        guard via != .key, via != .token else {
             return .error(403, "peers_need_same_user", "the computer list is only shown to devices of this Mac's tailnet user")
         }
         let list = discovery?.computers() ?? []
@@ -210,7 +297,7 @@ public final class RequestHandler {
             r.headers["Allow"] = "GET"
             return r
         }
-        guard via != .key else {
+        guard via != .key, via != .token else {
             return .error(403, "logs_need_same_user", "logs are only shown to this Mac and to devices of its tailnet user")
         }
         guard let source = logSource, source.available else {

@@ -304,3 +304,16 @@ extension InserterClient {
         }
     }
 }
+
+// MARK: - pairing (the person at this Mac)
+
+extension InserterClient {
+    /// A request to this Mac's own daemon on loopback, for the `pair` command: it is the person at this Mac asking, so no key.
+    public static func local(port: Int, method: String, path: String, body: [String: Any]? = nil, timeout: TimeInterval = 5) -> (status: Int, body: [String: Any])? {
+        let mac = KnownMac(alias: "-", host: "127.0.0.1", port: port)
+        let payload = body.flatMap { try? JSONSerialization.data(withJSONObject: $0) }
+        guard case .success(let (code, data)) = request(mac, method: method, path: path, body: payload ?? (method == "POST" ? Data("{}".utf8) : nil),
+                                                        timeout: timeout, sendKey: false) else { return nil }
+        return (code, (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:])
+    }
+}
