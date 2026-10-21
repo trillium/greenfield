@@ -16,11 +16,14 @@ final class AppModel {
     let log: EventLog
     let peers: PeerDirectory
     let retry: AutoRetry
+    let support: SupportLog
 
     init(session: DictationSession, outbox: Outbox, targets: TargetStore, client: ReceiverClient = ReceiverClient(),
          models: ParrotModelStore = ParrotModelStore(), ruleStore: RuleStore = RuleStore(defaults: .standard),
-         log: EventLog = EventLog(url: nil), phraseStore: PhraseStore = PhraseStore(defaults: .standard)) {
+         log: EventLog = EventLog(url: nil), phraseStore: PhraseStore = PhraseStore(defaults: .standard),
+         supportLogURL: URL? = nil) {
         self.log = log
+        support = SupportLog(log: log, outbox: outbox, url: supportLogURL)
         self.session = session
         self.outbox = outbox
         self.targets = targets
@@ -32,6 +35,8 @@ final class AppModel {
         flow = FlowController(session: session, delivery: delivery, models: models, ruleStore: ruleStore, log: log,
                               phraseStore: phraseStore)
         log.add(.app, "app started, \(BuildInfo().display)")
+        support.health = { [weak self] in self?.healthReport() ?? [] }
+        support.writeNow()
     }
 
     static func live() -> AppModel {
@@ -45,7 +50,7 @@ final class AppModel {
         let session = DictationSession(transcriber: ParakeetTranscriber(), listen: machine)
         if fake { session.attach() }
         return AppModel(session: session, outbox: Outbox(url: Outbox.standardURL), targets: targets,
-                        log: EventLog(url: EventLog.standardURL))
+                        log: EventLog(url: EventLog.standardURL), supportLogURL: SupportLog.standardURL)
     }
 
     /// The facts the Health screen reports on, gathered now.
@@ -69,6 +74,8 @@ final class AppModel {
                                   hasKey: !(targets.key(for: target) ?? "").isEmpty, answer: health.answers[target.id])
         }
         input.queued = outbox.pending.count
+        input.logsAvailable = support.isAvailable || support.url == nil
+        input.loggedEvents = log.entries.count
         input.appVersion = Compatibility.appVersion
         input.minimumAgent = Compatibility.minimumAgent
         return input

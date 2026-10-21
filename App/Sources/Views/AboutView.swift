@@ -15,7 +15,7 @@ struct AboutView: View {
                 Section("Support") {
                     NavigationLink("Get ready: the setup checklist") { OnboardingView(model: model) {} }
                     NavigationLink("Health: is everything set up?") { HealthView(model: model) }
-                    NavigationLink("Diagnostics: recent events") { DiagnosticsView(log: log) }
+                    NavigationLink("Diagnostics: recent events") { DiagnosticsView(log: log, support: model.support) }
                 }
                 Section("Licences") {
                     NavigationLink("Attribution") { AttributionView() }

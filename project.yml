@@ -56,6 +56,9 @@ targets:
     sources:
       - App/Tests
       - Spike/Sources/Core/SpikeMath.swift  # pure benchmark helpers, tested here
+      # Shared byte for byte with the sibling project (docs/parity.md) and tested by a shared test that imports no app module.
+      - App/Sources/Support/LogRedactor.swift
+      - App/Sources/Support/LogBundle.swift
       - path: Spike/Phrases/phrases.json
         buildPhase: none
     dependencies:

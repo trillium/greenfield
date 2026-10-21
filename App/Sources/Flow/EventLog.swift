@@ -22,6 +22,8 @@ final class EventLog {
     static let capacity = 500
 
     private(set) var entries: [Entry] = []
+    /// Called after every change, so the support log file can follow.
+    var onChange: (() -> Void)?
     private let url: URL?
     private var saver: Task<Void, Never>?
 
@@ -57,6 +59,7 @@ final class EventLog {
 
     /// Writes soon, not on every entry: sounds can arrive many times a second.
     private func scheduleSave() {
+        onChange?()
         guard url != nil, saver == nil else { return }
         saver = Task { [weak self] in
             try? await Task.sleep(for: .seconds(1))

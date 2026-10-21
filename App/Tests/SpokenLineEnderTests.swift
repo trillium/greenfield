@@ -55,7 +55,7 @@ final class SpokenLineEnderTests: XCTestCase {
         XCTAssertEqual(rig.outbox.items.first?.text, "Please move the meeting to Thursday.", "phrase stripped, text submitted")
         XCTAssertEqual(rig.flow.text, "")
         XCTAssertEqual(rig.flow.state, .idle)
-        XCTAssertTrue(rig.log.export().contains("spoken line-ender \"send it\""))
+        XCTAssertTrue(rig.log.export().contains("spoken line-ender at the end of the transcript"))
     }
 
     func testTheHypotheticalSentenceDoesNotSubmit() async throws {

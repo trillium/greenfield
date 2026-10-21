@@ -212,7 +212,7 @@ final class FlowController {
             return
         }
         // The phrase ends the line: it is not part of the text, and the box goes to the active computer like a second tongue click.
-        log.add(.dictation, "spoken line-ender \"\(ender.phrase)\" at the end of the transcript: submitting")
+        log.add(.dictation, "spoken line-ender at the end of the transcript: submitting")
         if !ender.remaining.isEmpty { text = text.isEmpty ? ender.remaining : text + " " + ender.remaining }
         if session.isHolding { session.endHold() }
         submit()

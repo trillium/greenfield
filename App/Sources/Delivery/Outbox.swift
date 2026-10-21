@@ -40,6 +40,8 @@ final class Outbox {
     static let keepSent = 20
 
     private(set) var items: [OutboxItem] = []
+    /// Called after every save, so the support log file can follow. It reads metadata only.
+    var onChange: (() -> Void)?
     private let url: URL?
 
     init(url: URL?) {
@@ -120,6 +122,7 @@ final class Outbox {
     }
 
     private func save() {
+        onChange?()
         guard let url, let data = try? JSONEncoder().encode(items) else { return }
         try? data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }

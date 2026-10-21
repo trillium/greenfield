@@ -40,6 +40,9 @@ struct HealthInputs {
     var tailnetConnected = true
     var computers: [Computer] = []
     var queued = 0
+    /// Can the support log be written (so Share logs and `make logs` have something to hand over)? And how many events it holds.
+    var logsAvailable = true
+    var loggedEvents = 0
     /// This app's own version and the oldest agent it works with (nil in tests that do not care).
     var appVersion: Semver?
     var minimumAgent: Semver?
@@ -48,7 +51,7 @@ struct HealthInputs {
 enum HealthReport {
     static func build(_ input: HealthInputs) -> [HealthItem] {
         [speech(input), permission(input), microphone(input), detector(input), tailnet(input)]
-            + computers(input) + [outbox(input)]
+            + computers(input) + [outbox(input), logs(input)]
     }
 
     static func summary(_ items: [HealthItem]) -> String {
@@ -227,6 +230,17 @@ enum HealthReport {
         return HealthItem(id: "outbox", title: "Outbox", level: .warning,
                           detail: input.queued == 1 ? "1 text is waiting to be sent." : "\(input.queued) texts are waiting to be sent.",
                           fix: "Fix the computer above, then open the Outbox and tap Retry.")
+    }
+
+    private static func logs(_ input: HealthInputs) -> HealthItem {
+        let title = "Logs available"
+        guard input.logsAvailable else {
+            return HealthItem(id: "logs", title: title, level: .warning, detail: "The support log could not be saved on this phone, so there is nothing to share.",
+                              fix: "Free some space on the phone, then reopen the app.")
+        }
+        let events = input.loggedEvents == 1 ? "1 event is" : "\(input.loggedEvents) events are"
+        return HealthItem(id: "logs", title: title, level: .ok,
+                          detail: "\(events) kept on this phone, with no dictated text or keys. Help > Diagnostics > Share logs sends them.", fix: nil)
     }
 
     private static func host(of address: String) -> String {

@@ -18,10 +18,10 @@ public struct LogRedactor {
             // swiftlint:disable:next force_try
             try! NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
         }
-        let name = "(?:x-dictation-key|x-[a-z-]*key|authorization|proxy-authorization|cookie|set-cookie|api[_-]?key|access[_-]?token|"
+        let name = "(?:x-[a-z-]*key|authorization|proxy-authorization|cookie|set-cookie|api[_-]?key|access[_-]?token|"
             + "auth[_-]?token|token|secret|password|passwd|passphrase|bearer|key)"
         rules = [
-            // header or field with a value: `X-Dictation-Key: abc`, `key=abc`, `"token":"abc"`
+            // header or field with a value: `X-Example-Key: abc`, `key=abc`, `"token":"abc"`
             (rx("\\b(\(name))([\"']?\\s*[:=]\\s*[\"']?)(?:(?:bearer|basic)\\s+)?[^\\s,;\"'}&]+"), "$1$2" + Self.mask),
             (rx("\\bbearer\\s+[^\\s,;\"']+"), "Bearer " + Self.mask),
             (rx("\\btskey-[a-z0-9-]+"), Self.mask),
