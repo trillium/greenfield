@@ -32,7 +32,6 @@ Non-speech sounds (tongue clicks, pops, kitty-cmere) start and end dictation thr
 4. `make test` runs the unit tests on a simulator. No Apple account needed.
 5. `make check` is the full gate: shell, lint, secrets, version tests, package pin tests, stub receiver tests, unit tests.
 
-Dependency versions live in `Config/Package.resolved`: `scripts/lib.sh` copies them into the generated workspace and every `xcodebuild` uses those pins, so a build is the same everywhere. Bump a version in `project.yml` and re-pin it there in the same commit; `make test-packages` fails if you forget.
 
 To run on a device, copy `Config/Local.xcconfig.example` to `Config/Local.xcconfig` and set `DEVELOPMENT_TEAM`. The speech model (about 0.5 GB) downloads on the first launch and is never in git. Credentials: `docs/signing.md`. Versioning: `docs/versioning.md`.
 

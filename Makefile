@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 SCRIPT_FILES := $(wildcard scripts/*.sh) $(wildcard tools/*/*.sh) $(wildcard .githooks/*)
 
-.PHONY: help doctor generate build device-compile test archive archive-unsigned version release test-version test-packages check lint shell secrets hooks stub-receiver stub-receiver-test spike-build spike-audio core clean
+.PHONY: help doctor generate build device-compile test archive archive-unsigned version release test-version check lint shell secrets hooks stub-receiver stub-receiver-test spike-build spike-audio core clean
 help: ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/'
 
@@ -23,14 +23,12 @@ release: ## cut a release: make release LEVEL=major|minor|patch (see docs/versio
 	scripts/release.sh $(LEVEL)
 test-version: ## unit tests for scripts/version.sh
 	scripts/test-version.sh
-test-packages: ## check Config/Package.resolved still pins every package project.yml names
-	scripts/test-packages.sh
 archive: ## signed release archive (needs Apple signing; see docs/signing.md)
 	scripts/archive.sh
 archive-unsigned: ## unsigned archive: proves it compiles, cannot be uploaded
 	SIGNING=none scripts/archive.sh
 
-check: shell lint secrets test-version test-packages stub-receiver-test test ## the single green gate; must pass at every commit
+check: shell lint secrets test-version stub-receiver-test test ## the single green gate; must pass at every commit
 shell: ## syntax + shellcheck
 	@for f in $(SCRIPT_FILES); do bash -n "$$f" || exit 1; done
 	shellcheck -x $(SCRIPT_FILES)

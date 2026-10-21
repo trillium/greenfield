@@ -4,11 +4,6 @@
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG_DIR="$ROOT/Config"
-RESOLVED_PINS="$CONFIG_DIR/Package.resolved"  # the Swift package pins every build copies into the .xcodeproj
-# Every xcodebuild uses these pins instead of working the dependency versions out from upstream tags, so a build
-# is the same everywhere and a tag that moves cannot change what is compiled. scripts/test-packages.sh fails when a
-# pin stops matching project.yml, so a version bump cannot be forgotten here.
-PINNED_PACKAGES=(-onlyUsePackageVersionsFromResolvedFile)
 BUILD_DIR="${BUILD_DIR:-$ROOT/build}"
 
 # cfg KEY -> value from Config/Base.xcconfig, overridden by Config/Local.xcconfig, then by the
@@ -42,17 +37,6 @@ generate_project() {
   [ -f "$ROOT/.parrot-core/device/libparrot_core.a" ] || "$ROOT/scripts/fetch-core.sh"  # detector libraries and model, git-ignored
   "$ROOT/scripts/version.sh" --write  # stamp every build from git tags; no hand edits
   (cd "$ROOT" && xcodegen generate --quiet)
-  seed_resolved_pins
-}
-
-# xcodegen cannot write Package.resolved and the .xcodeproj is git-ignored, so the pins live in Config/ and are
-# copied into the generated workspace. Every build then uses the exact versions we committed instead of asking
-# the package manager to work them out from upstream tags. scripts/test-packages.sh keeps the two in step.
-seed_resolved_pins() {
-  local dir="$PROJECT/project.xcworkspace/xcshareddata/swiftpm"
-  [ -f "$RESOLVED_PINS" ] || return 0
-  mkdir -p "$dir"
-  cp "$RESOLVED_PINS" "$dir/Package.resolved"
 }
 
 # Pick a concrete iPhone simulator id, preferring one that is not already booted so we never

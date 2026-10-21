@@ -10,5 +10,5 @@ if [ "${1:-}" = "--device" ]; then dest="generic/platform=iOS"; shift; else dest
 scheme="${1:-$SCHEME}"
 echo "building $scheme for: $dest"
 xcodebuild -project "$PROJECT" -scheme "$scheme" -destination "$dest" \
-  -derivedDataPath "$DERIVED" "${PINNED_PACKAGES[@]}" CODE_SIGNING_ALLOWED=NO build -quiet
+  -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO build -quiet
 echo "build ok"
