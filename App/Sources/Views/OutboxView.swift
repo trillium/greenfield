@@ -1,44 +1,42 @@
 import KitUI
 import SwiftUI
 
-/// Every transcript and what became of it, with Resend and Copy.
+/// Every transcript and what became of it, with Resend and Copy. A screen of the Computers tab ("Waiting to send").
 struct OutboxView: View {
     let model: AppModel
     @State private var confirmClearSent = false
 
     var body: some View {
-        NavigationStack {
-            List {
-                if !model.outbox.pending.isEmpty {
-                    Section {
-                        Button("Retry all (\(model.outbox.pending.count))", systemImage: "arrow.clockwise") {
-                            Task { await model.delivery.resendAll() }
-                        }
-                        RetryNote(retry: model.retry)
+        List {
+            if !model.outbox.pending.isEmpty {
+                Section {
+                    Button("Retry all (\(model.outbox.pending.count))", systemImage: "arrow.clockwise") {
+                        Task { await model.delivery.resendAll() }
                     }
-                }
-                if model.outbox.items.isEmpty {
-                    ContentUnavailableView("Nothing yet", systemImage: "tray", description: Text("Transcripts you dictate are kept here."))
-                }
-                ForEach(model.outbox.items) { item in
-                    OutboxRow(item: item, model: model)
+                    RetryNote(retry: model.retry)
                 }
             }
-            .navigationTitle("Outbox")
-            .confirmationDialog("Clear the sent items?", isPresented: $confirmClearSent, titleVisibility: .visible) {
-                Button("Clear sent", role: .destructive) { model.outbox.clearSent() }
-                Button("Keep them", role: .cancel) { }
-            } message: {
-                Text("Text already sent to a computer is taken off this phone. Anything still waiting stays.")
+            if model.outbox.items.isEmpty {
+                ContentUnavailableView("Nothing yet", systemImage: "tray", description: Text("Transcripts you dictate are kept here."))
             }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button("Retry all unsent", systemImage: "arrow.clockwise") { Task { await model.delivery.resendAll() } }
-                            .disabled(model.outbox.pending.isEmpty)
-                        Button("Clear sent", systemImage: "trash", role: .destructive) { confirmClearSent = true }
-                    } label: { Label("More", systemImage: "ellipsis.circle") }
-                }
+            ForEach(model.outbox.items) { item in
+                OutboxRow(item: item, model: model)
+            }
+        }
+        .navigationTitle("Waiting to send")
+        .confirmationDialog("Clear the sent items?", isPresented: $confirmClearSent, titleVisibility: .visible) {
+            Button("Clear sent", role: .destructive) { model.outbox.clearSent() }
+            Button("Keep them", role: .cancel) { }
+        } message: {
+            Text("Text already sent to a computer is taken off this phone. Anything still waiting stays.")
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("Retry all unsent", systemImage: "arrow.clockwise") { Task { await model.delivery.resendAll() } }
+                        .disabled(model.outbox.pending.isEmpty)
+                    Button("Clear sent", systemImage: "trash", role: .destructive) { confirmClearSent = true }
+                } label: { Label("More", systemImage: "ellipsis.circle") }
             }
         }
     }

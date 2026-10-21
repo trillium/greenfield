@@ -3,11 +3,15 @@ import SwiftUI
 /// The chosen Mac with its reachability dot; a menu switches between Macs.
 struct TargetPicker: View {
     let model: AppModel
+    /// The word before the chosen computer's name: "To:" where text is sent, "Computer:" where a tool acts on it.
+    var prefix = "To:"
+    /// Said when no computer has been added yet.
+    var emptyNote = "Add a computer in the Computers tab to send your words somewhere."
 
     var body: some View {
         let targets = model.targets
         if targets.targets.isEmpty {
-            Label("Add a computer in the Computers tab to send your words somewhere.", systemImage: "desktopcomputer")
+            Label(emptyNote, systemImage: "desktopcomputer")
                 .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
@@ -23,13 +27,16 @@ struct TargetPicker: View {
                 HStack {
                     if let selected = targets.selected {
                         HealthDot(state: model.health.state(for: selected))
-                        Text("To: \(selected.name)").font(.headline)
+                        Text("\(prefix) \(selected.name)").font(.headline)
                     }
                     Image(systemName: "chevron.up.chevron.down").font(.caption).accessibilityHidden(true)
                     Spacer()
                 }
             }
             .accessibilityLabel("Active computer")
+            .accessibilityValue(targets.selected?.name ?? "")
+            // What is written on the control is its first word too, so "Tap Computer" works as well as "Tap Active computer".
+            .accessibilityInputLabels(["Active computer", String(prefix.dropLast(prefix.hasSuffix(":") ? 1 : 0))])
         }
     }
 }

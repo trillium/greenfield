@@ -42,8 +42,11 @@ struct SocketTransport: HTTPTransport {
     }
 
     static func encode(_ request: URLRequest, host: String, port: Int) -> Data {
-        let path = (request.url?.path.isEmpty ?? true) ? "/" : request.url!.path
-        var head = "\(request.httpMethod ?? "GET") \(path) HTTP/1.1\r\nHost: \(host):\(port)\r\nConnection: close\r\n"
+        var target = (request.url?.path.isEmpty ?? true) ? "/" : request.url!.path
+        // The assist window list asks `?since=&epoch=`; a request line without its query would always get the full list.
+        let parts = request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }
+        if let query = parts?.percentEncodedQuery, !query.isEmpty { target += "?" + query }
+        var head = "\(request.httpMethod ?? "GET") \(target) HTTP/1.1\r\nHost: \(host):\(port)\r\nConnection: close\r\n"
         for (name, value) in request.allHTTPHeaderFields ?? [:] where name.lowercased() != "content-length" {
             head += "\(name): \(value)\r\n"
         }

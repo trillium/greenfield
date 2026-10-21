@@ -147,7 +147,9 @@ enum AppHealth {
             return [HealthItem(id: "computers", title: "Computers", level: .problem, detail: "No computer is set up, so there is nowhere to send text.",
                                fix: "Run mac/install.sh on the Mac, then leave this app open: the computer turns up here on its own.")]
         }
-        var items = input.computers.map { computer($0, app: input.appVersion, minimumAgent: input.minimumAgent) }
+        var items = input.computers.flatMap { found -> [HealthItem] in
+            [computer(found, app: input.appVersion, minimumAgent: input.minimumAgent)] + [assist(found)].compactMap { $0 }
+        }
         if !input.computers.contains(where: \.isActive) {
             items.append(HealthItem(id: "active", title: "Active computer", level: .problem, detail: "No computer is chosen to receive text.",
                                     fix: "Tap a computer in the Computers tab to make it the active one."))
@@ -180,6 +182,15 @@ enum AppHealth {
             return HealthItem(id: id, title: title, level: .problem, detail: reason,
                               fix: "Check that Tailscale is on here and on \(computer.name), that the computer is awake, and that its agent is running (`\(agent) key status`).")
         }
+    }
+
+    /// Assist ships off, so "off" is information, not a failure: it is `ok`, with the one optional step. Said only for a computer that
+    /// answered and reports an `assist` object; an agent without assist tools says nothing here (the version line covers it).
+    static func assist(_ computer: HealthInputs.Computer) -> HealthItem? {
+        guard case .ready(let status)? = computer.answer, let assist = status.assist, !assist.enabled else { return nil }
+        return HealthItem(id: "assist-" + computer.name, title: "Assist on \(computer.name)", level: .ok,
+                          detail: "Assist is off on \(computer.name). Nothing is wrong: the Assist tab (trackpad and window switcher) is off until the Mac's owner turns it on.",
+                          fix: "Only if you want it: the Mac's owner runs `greenfield-inserter assist on` on \(computer.name), then Check again.")
     }
 
     private static func ready(_ status: ReceiverClient.MacStatus, of computer: HealthInputs.Computer, id: String, title: String,
@@ -221,7 +232,7 @@ enum AppHealth {
         if input.queued == 0 { return HealthItem(id: "outbox", title: "Outbox", level: .ok, detail: "Nothing is waiting.", fix: nil) }
         return HealthItem(id: "outbox", title: "Outbox", level: .warning,
                           detail: input.queued == 1 ? "1 text is waiting to be sent." : "\(input.queued) texts are waiting to be sent.",
-                          fix: "Fix the computer above, then open the Outbox and tap Retry.")
+                          fix: "Fix the computer above, then open Computers > Waiting to send and tap Retry.")
     }
 
     private static func logs(_ input: HealthInputs) -> HealthItem {

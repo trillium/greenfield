@@ -38,6 +38,10 @@ targets:
     dependencies:
       - package: FluidAudio
       - package: ParrotKit
+        product: KitAssist
+      - package: ParrotKit
+        product: KitAssistNet
+      - package: ParrotKit
         product: KitCore
       - package: ParrotKit
         product: KitHealth
@@ -79,6 +83,10 @@ targets:
         buildPhase: none
     dependencies:
       - target: DictationApp
+      - package: ParrotKit
+        product: KitAssist
+      - package: ParrotKit
+        product: KitAssistNet
       - package: ParrotKit
         product: KitCore
       - package: ParrotKit

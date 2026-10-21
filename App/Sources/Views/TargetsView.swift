@@ -9,6 +9,20 @@ struct TargetsView: View {
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    NavigationLink {
+                        OutboxView(model: model)
+                    } label: {
+                        HStack {
+                            Label("Waiting to send", systemImage: "tray.full")
+                            Spacer()
+                            if !model.outbox.pending.isEmpty {
+                                Text("\(model.outbox.pending.count)").foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                }
                 if model.targets.targets.isEmpty {
                     let description = Text("Computes here on their own: found on this network, over the tailnet, or from a QR code.")
                     ContentUnavailableView("No computers yet", systemImage: "desktopcomputer", description: description)

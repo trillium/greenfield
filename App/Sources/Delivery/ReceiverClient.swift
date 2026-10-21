@@ -1,4 +1,5 @@
 import Foundation
+import KitAssist
 
 /// Talks to a Mac receiver (docs/mac-contract.md). One request per call; never retries by itself: the outbox decides about resends.
 struct ReceiverClient: Sendable {
@@ -56,6 +57,8 @@ struct ReceiverClient: Sendable {
         var minClientVersion: String?
         /// The Mac's own view of whether the clients it has seen are compatible, when it reports one.
         var appCompatibility: DeliveryLine?
+        /// The agent's `assist` object: whether the window switcher and the trackpad are on. nil on an agent that has no assist tools.
+        var assist: AssistStatus?
     }
 
     /// "Can actually insert text": yes or no, in the agent's words, with its fix text.
@@ -179,7 +182,13 @@ struct ReceiverClient: Sendable {
                                 accessibility: json["accessibility"] as? Bool ?? true,
                                 insertedCount: json["inserted_count"] as? Int ?? 0, delivery: deliveryLine(json),
                                 minClientVersion: json["min_client_version"] as? String,
-                                appCompatibility: compatibilityLine(json)))
+                                appCompatibility: compatibilityLine(json), assist: assistStatus(json)))
+    }
+
+    /// The `assist` object of `GET /status`, or nil when the agent has none (an older agent, or one that sends something else).
+    static func assistStatus(_ json: [String: Any]) -> AssistStatus? {
+        guard let object = json["assist"] as? [String: Any] else { return nil }
+        return (try? JSONSerialization.data(withJSONObject: object)).flatMap { try? JSONDecoder().decode(AssistStatus.self, from: $0) }
     }
 
     /// Reads the agent's insertion line leniently: a `delivery` object (`ok`/`can_insert`, `message`/`text`/`summary`, `fix`), or a
