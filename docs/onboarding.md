@@ -120,6 +120,29 @@ asks again now instead of in a few seconds.
 Nothing on this tab asks you to type. There is an **Advanced** row at the very bottom, which is a last resort:
 it is the only screen in the app with a field you can type into, and none of the steps in this page need it.
 
+### Assist
+
+The **Assist** tab is the phone as a trackpad and a window switcher for the Mac you chose (the same Mac as
+the *Computers* tab: change it from the *Computer* menu at the top of the tab). It is **off on every Mac until
+that Mac's owner turns it on**, so a new Mac shows *Assist is off on* its name, with one step under it. The
+step is a command on the Mac, in Terminal:
+
+```
+greenfield-inserter assist on
+```
+
+Then tap *Check again* on the phone. The trackpad has its own switch, `greenfield-inserter assist pointer on`;
+until it is on, only *Windows* is offered. `greenfield-inserter assist off` turns everything off at once, and
+the phone says so the next time it asks. Nothing on the phone can turn assist on, and nothing here needs a
+key or an address: the Mac lets in the devices of its own tailnet user, as for text.
+
+*Assist is off* is not a fault. **Help > Health** says it in one informational line ("Assist on ..."), not as a
+warning, and the summary stays green. A Mac too old to have assist shows *has no assist tools* instead, with the
+update step.
+
+Every control on these screens has a button and a spoken name, so Voice Control can reach all of it: the
+trackpad has a button for every gesture, and *Stop* is always at the top.
+
 ### Health
 
 **Help > Health** checks everything at once and says, in plain words, what is wrong and what to do about it. It
@@ -237,9 +260,9 @@ Then tap *Check* on the **Computers** tab, or *Look for computers* on the checkl
 ### 4. "its screen is locked"
 
 The Mac's screen is locked, so text cannot be typed yet. Nothing is lost: the phone keeps the text in the
-**Outbox** and the message says its screen is locked.
+**Waiting to send** list (in the *Computers* tab) and the message says its screen is locked.
 
-**Fix:** unlock the Mac, then tap *Retry all* on the Outbox (or *Retry* on the waiting item). The phone retries
+**Fix:** unlock the Mac, then tap *Retry all* under *Computers > Waiting to send* (or *Retry* on the waiting item). The phone retries
 by itself as well.
 
 ### 5. "a password field is focused"
@@ -251,7 +274,7 @@ password into the wrong place.
 
 ### 6. Nothing arrives
 
-Look at the **Outbox** tab. Every text that has not been delivered is there, with the plain reason it is
+Open **Computers > Waiting to send** (the *Computers* tab also shows how many are waiting). Every text that has not been delivered is there, with the plain reason it is
 waiting: its screen is locked, a password field is focused, the phone is not the same tailnet user as that
 Mac, the daemon is not answering, the app and the daemon are on different lines of the compatibility rule.
 
