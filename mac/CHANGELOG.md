@@ -3,6 +3,19 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: `docs/versioning.md`. The repository has one
 version line; entries here are the daemon's part of each release.
 
+## [0.4.0] - 2026-10-21
+
+### Added
+- The assist tools for the phone's window switcher and trackpad, built on the shared kit's `KitAssist` types and tested against its recorded fixtures. **Off until `greenfield-inserter assist on`**; `assist off` is the kill switch and takes effect at once. The kit is a checkout beside this repository (`PARROT_KIT_DIR`).
+  - `GET /assist/windows` and `POST /assist/windows/focus`: apps and windows by most recent use, a revision counter, and a focus that answers what is true (`ok` only when the app or window is in front). Refused when the screen is locked or secure input is on, bounded in size, rate limited, one activation at a time. Window titles and names are never logged (counts only) and are masked in `GET /logs`.
+  - `POST /assist/pointer/session` and a UDP pointer stream (TPT1): a session id and a datagram key per session over the authenticated route; every datagram carries a 16-byte HMAC-SHA256 tag and comes from the address that opened the session; sessions end after 30 s of silence, at the lock screen, on `assist off` and after an hour; the socket is bound to the tailnet address only (never a wildcard) and exists only while a session does; datagrams are rate limited and unauthenticated ones get no answer. Events go to a `PointerSink`; tests use a recording sink and never post a real pointer event.
+  - Same tailnet-identity authorization as `POST /text`, except a caller that holds only the optional key is refused (403 `assist_need_same_user`).
+  - `GET /status` reports `assist: {enabled, windows, pointer, capabilities}`. `greenfield-inserter assist [on|off|windows|focus|pointer|titles]` and `assist check-windows` (the live window check, from Terminal.app on the Mac).
+  - `scripts/assist-live-pointer-test.sh`, DISABLED until the captain approves a scratch Mac or macOS VM, and `scripts/assist_tpt1_probe.py`, an independent TPT1 encoder checked against the kit's recorded datagrams by `make test`.
+
+### Changed
+- The daemon's main thread runs its run loop (NSWorkspace needs it to keep the application list current).
+
 ## [0.3.0] - 2026-10-21
 
 ### Added

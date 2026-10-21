@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: docs/versioning.md.
 
+## [0.4.0] - 2026-10-21
+
+The app and the Mac daemon move to the 0.4 line together (while MAJOR is 0 the MINOR must match; `docs/mac-contract.md`). The daemon's entry is in `mac/CHANGELOG.md`.
+
+### Added
+- The Mac daemon is the helper for the phone's assist tools, off until `greenfield-inserter assist on`: a window switcher (`GET /assist/windows`, `POST /assist/windows/focus`) and a trackpad receiver (`POST /assist/pointer/session` and an authenticated UDP stream). `GET /status` gains `assist`. See `mac/docs/assist-pointer.md`.
+- A disabled live pointer test and an independent encoder for the pointer wire; live pointer injection is not approved yet.
+- The app uses the shared kit's WordToggle for the phrase and rule switches, asks to confirm before every destructive action, honours Reduce Motion and Differentiate Without Colour, and adds headings, hints, named actions and large-text layouts.
+- unify version.sh for the sibling repos
+
+### Fixed
+- Every control has a visible name, decorative icons are hidden from VoiceOver, and status colours come from the shared tokens with every status named in words.
+
 ## [0.3.0] - 2026-10-21
 
 The app and the Mac daemon move to the 0.3 line together (while MAJOR is 0 the MINOR must match; `docs/mac-contract.md`). The daemon's own entries for 0.2.1 to 0.3.0 are in `mac/CHANGELOG.md`.
