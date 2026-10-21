@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: docs/versioning.md.
 
+## [0.3.0] - 2026-10-21
+
+The app and the Mac daemon move to the 0.3 line together (while MAJOR is 0 the MINOR must match; `docs/mac-contract.md`). The daemon's own entries for 0.2.1 to 0.3.0 are in `mac/CHANGELOG.md`.
+
+### Added
+- Onboarding: a checklist with one-tap fixes, a guided first dictation, a QR scan for the Mac link and a single "Am I ready?" line; every red state names a fix and nothing asks a person to type a key or address (those fields live under Advanced).
+- Teach your sounds, on the shared ParrotKit package.
+- Spoken line-enders ("send it", "over and out"), an always-visible Submit and Retry all; queued texts retry by themselves with backoff.
+- Logs without a cable: a redacted support log with a Share logs button in the app, `GET /logs` on the daemon, and `make logs TARGET=phone|macbook|mini0|trainer|all` (`docs/logs.md`). URL queries, launch-argument secrets and known values are masked.
+- One-command Mac onboarding (`mac/install.sh`, a live setup checklist, `ready`), the port read from `.env`, and `scripts/onboarding-check.sh` to score onboarding by facts.
+- Commit tooling: Conventional Commits are validated by a hook and by `make check-commits`, and `make release-check` suggests the semver bump.
+
+### Fixed
+- An untagged build no longer raises a false "Update the Mac daemon" against the declared peer floor.
+- The Mac `--help` handler works when invoked from the repository root.
+
 ## [0.2.0] - 2026-10-20
 
 ### Breaking

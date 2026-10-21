@@ -3,7 +3,7 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: `docs/versioning.md`. The repository has one
 version line; entries here are the daemon's part of each release.
 
-## [0.3.0] - unreleased
+## [0.3.0] - 2026-10-21
 
 ### Added
 - `GET /logs`: the daemon's own recent log, redacted, for this Mac and devices of its tailnet user (not the optional key), with
