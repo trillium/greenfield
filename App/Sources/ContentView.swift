@@ -1,3 +1,4 @@
+import KitUI
 import SwiftUI
 
 struct ContentView: View {
@@ -15,6 +16,8 @@ struct ContentView: View {
                 .badge(model.outbox.pending.count)
             AboutView(model: model).tabItem { Label("Help", systemImage: "stethoscope") }
         }
+        // The stock accent is too light to read as text on the page; the kit's accent reaches 4.5:1.
+        .tint(KitTokens.Status.accent)
         .task { await model.session.prepareModel() }
         .task { model.flow.startDetector() }
         .fullScreenCover(isPresented: Binding(get: { !onboarded }, set: { _ in })) {

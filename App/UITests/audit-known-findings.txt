@@ -5,7 +5,7 @@
 # names each one).
 # The known ones are the audit's verdict on system-drawn list headers and empty-state views, the shared About and Levels screens' text, disabled
 # controls, and text at the bottom edge behind the translucent tab bar (where the audit samples the blurred bar as its background).
-testComputersTabPassesTheAccessibilityAudit | Contrast | 5
+testComputersTabPassesTheAccessibilityAudit | Contrast | 3
 testComputersTabPassesTheAccessibilityAudit | Dynamic Type | 3
 testDictateTabPassesTheAccessibilityAudit | Contrast | 2
 testFirstRunScreenPassesTheAccessibilityAudit | Dynamic Type | 1
