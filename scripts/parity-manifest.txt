@@ -17,3 +17,6 @@ scripts/test-pull-logs.sh
 App/Sources/Support/LogRedactor.swift
 App/Sources/Support/LogBundle.swift
 App/Tests/LogRedactorTests.swift
+scripts/test-ui.sh
+scripts/audit-findings.sh
+App/UITests/AccessibilityAudit.swift
