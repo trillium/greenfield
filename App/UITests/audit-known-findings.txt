@@ -1,0 +1,16 @@
+# Apple accessibility audit findings that were present when the audit test was added (2026-10-21). One line each:
+#   test | kind of finding (Contrast, Dynamic Type, Text clipped) | how many
+# The test fails when a screen has more findings of a kind than listed, so the screens can only get better. Lower a count (or remove
+# the line) when a finding is fixed; `make test-ui STRICT=1` ignores this file and fails on every finding (scripts/audit-findings.sh
+# names each one).
+# The known ones are the audit's verdict on system-drawn list headers and empty-state views, the shared About and Levels screens' text, disabled
+# controls, and text at the bottom edge behind the translucent tab bar (where the audit samples the blurred bar as its background).
+testComputersTabPassesTheAccessibilityAudit | Contrast | 5
+testComputersTabPassesTheAccessibilityAudit | Dynamic Type | 3
+testDictateTabPassesTheAccessibilityAudit | Contrast | 2
+testFirstRunScreenPassesTheAccessibilityAudit | Dynamic Type | 1
+testHelpTabPassesTheAccessibilityAudit | Contrast | 4
+testHelpTabPassesTheAccessibilityAudit | Dynamic Type | 3
+testSoundsTabPassesTheAccessibilityAudit | Contrast | 4
+testSoundsTabPassesTheAccessibilityAudit | Dynamic Type | 2
+testAssistTabPassesTheAccessibilityAudit | Text clipped | 1
