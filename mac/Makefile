@@ -1,9 +1,11 @@
 # greenfield-inserter: receives text over the tailnet and inserts it at the cursor.
 SWIFT ?= swift
+# The shared kit (KitAssist: the window and pointer wire formats) is a checkout beside this repository; Package.swift reads PARROT_KIT_DIR.
+export PARROT_KIT_DIR ?= $(shell ../scripts/kit-dir.sh)
 # The port comes from GREENFIELD_PORT (environment or ../.env, see ../.env.example); PORT=N on the command line overrides it; with none, the daemon uses its built-in default.
 PORT  ?=
 
-.PHONY: onboard ready stamp restart update verify-running version build test run key check health doctor selftest insert-test permissions install uninstall status logs clean
+.PHONY: onboard ready stamp restart update verify-running version build test run key check health doctor selftest insert-test permissions install uninstall status logs assist assist-check clean
 
 # The whole onboarding in one command: install the signed build, start it, guide the Accessibility step, end "ready".
 onboard:
@@ -25,6 +27,7 @@ build: stamp
 
 test: stamp
 	$(SWIFT) test
+	python3 scripts/assist_tpt1_probe.py --selftest
 
 # Restart the installed agent (bootout + bootstrap) and check the running build is the installed file.
 restart: build
@@ -67,6 +70,14 @@ insert-test: build
 # Check Accessibility and make macOS show its permission prompt if it is missing.
 permissions: build
 	.build/release/greenfield-inserter permissions
+
+# The assist tools (window switcher, trackpad) for the phone: what is on. Off by default; see docs/assist.md.
+assist: build
+	.build/release/greenfield-inserter assist status
+
+# The one live check of the window switcher: two throwaway windows of its own. Run it from Terminal.app on the Mac.
+assist-check: build
+	.build/release/greenfield-inserter assist check-windows
 
 # Install as a launchd agent: starts at login, restarts on crash.
 install:
