@@ -28,7 +28,7 @@ final class AppModel {
          log: EventLog = EventLog(url: nil), phraseStore: PhraseStore = PhraseStore(defaults: .standard),
          presetTrainers: String? = nil, trainerConfiguration: TrainerConfiguration = AppTeach.configuration(),
          teachLibrary: TeachLibrary = TeachLibrary(directory: AppModel.teachDirectory), teachDefaults: UserDefaults = .standard,
-         supportLogURL: URL? = nil) {
+         supportLogURL: URL? = nil, levelsStore: NoiseLevelsStoring = InMemoryNoiseLevelsStore()) {
         self.log = log
         support = SupportLog(log: log, outbox: outbox, url: supportLogURL)
         self.session = session
@@ -41,7 +41,7 @@ final class AppModel {
         peers = peerDirectory
         retry = AutoRetry(service: delivery, log: log)
         let flowController = FlowController(session: session, delivery: delivery, models: models, ruleStore: ruleStore, log: log,
-                                            phraseStore: phraseStore)
+                                            phraseStore: phraseStore, levelsStore: levelsStore)
         flow = flowController
         self.trainerConfiguration = trainerConfiguration
         let port = trainerConfiguration.port
@@ -101,7 +101,7 @@ final class AppModel {
         return AppModel(session: session, outbox: Outbox(url: Outbox.standardURL), targets: targets,
                         log: EventLog(url: EventLog.standardURL),
                         presetTrainers: Bundle.main.object(forInfoDictionaryKey: "GreenfieldPresetTrainers") as? String,
-                        supportLogURL: SupportLog.standardURL)
+                        supportLogURL: SupportLog.standardURL, levelsStore: AppLevels.standardStore())
     }
 
     /// The facts the Health screen reports on, gathered now.

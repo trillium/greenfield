@@ -1,4 +1,5 @@
 import Foundation
+import ParrotKit
 
 /// One recognised sound: which configured pattern fired and how sure the model was.
 struct SoundEvent: Equatable, Sendable, Identifiable {
@@ -84,18 +85,36 @@ private let soundEventCallback: pq_event_fn = { user, time, power, probs, count,
 
 /// Subscribes a detector to the microphone's sample bus and reports what it hears on the main queue, in order.
 /// The detector runs on the audio thread (one thread, as the library requires); nothing else touches it.
+///
+/// The input gain from the Levels screen is applied here, to the samples the detector hears and to the level meter, and nowhere else:
+/// speech recognition takes its audio from the bus untouched.
 final class SoundListener: @unchecked Sendable {
+    /// 16 kHz mono, the bus's own format, so audio time is samples over this.
+    private static let sampleRate = 16_000.0
+
     let labels: [String]
     private let detector: SoundDetector
     private var subscription: SampleBus.Subscription?
     private let onEvents: @Sendable ([SoundEvent]) -> Void
+    private let onReading: (@Sendable (LevelReading) -> Void)?
+    private let gain: Double
     /// The library allows one thread at a time; the microphone's audio thread is the normal caller and a test feed may be another.
     private let lock = NSLock()
+    // Meter state, guarded by `lock`.
+    private var scaled: [Float] = []
+    private var sumOfSquares = 0.0
+    private var counted = 0
+    private var samplesSeen = 0
+    private var pendingFired: [FiredSound] = []
 
-    /// `onEvents` runs on the main queue.
-    init(detector: SoundDetector, bus: SampleBus, onEvents: @escaping @Sendable ([SoundEvent]) -> Void) {
+    /// `onEvents` and `onReading` run on the main queue. `onReading` gets the input level (after the gain) about twenty times a second and
+    /// whatever fired since the last one; nil leaves the meter arithmetic off.
+    init(detector: SoundDetector, bus: SampleBus, gain: Double = 1, onReading: (@Sendable (LevelReading) -> Void)? = nil,
+         onEvents: @escaping @Sendable ([SoundEvent]) -> Void) {
         self.detector = detector
         labels = detector.labels
+        self.gain = gain
+        self.onReading = onReading
         self.onEvents = onEvents
         subscription = bus.subscribe { [weak self] chunk in self?.hear(chunk) }
     }
@@ -104,11 +123,29 @@ final class SoundListener: @unchecked Sendable {
 
     private func hear(_ chunk: [Float]) {
         lock.lock()
-        let events = detector.push(chunk)
+        if gain != 1 { chunk.withUnsafeBufferPointer { InputGain.apply($0, gain: gain, into: &scaled) } }
+        let events = detector.push(gain == 1 ? chunk : scaled)
+        let reading = meter(gain == 1 ? chunk : scaled, events: events)
         lock.unlock()
-        guard !events.isEmpty else { return }
         let deliver = onEvents
         // The main queue keeps order: two sounds in a row must reach the rules in the order they happened.
-        DispatchQueue.main.async { deliver(events) }
+        if !events.isEmpty { DispatchQueue.main.async { deliver(events) } }
+        if let reading, let onReading { DispatchQueue.main.async { onReading(reading) } }
+    }
+
+    /// Adds this chunk to the level being averaged and returns a reading when one is due. Called with the lock held.
+    private func meter(_ heard: [Float], events: [SoundEvent]) -> LevelReading? {
+        guard onReading != nil else { return nil }
+        sumOfSquares += heard.withUnsafeBufferPointer { InputLevel.sumOfSquares($0) }
+        counted += heard.count
+        samplesSeen += heard.count
+        pendingFired += events.map { FiredSound(name: $0.pattern, probability: $0.probability, power: $0.power, at: $0.time) }
+        guard counted >= InputLevel.updateStride || !events.isEmpty else { return nil }
+        let reading = LevelReading(at: Double(samplesSeen) / Self.sampleRate,
+                                   power: InputLevel.power(sumOfSquares: sumOfSquares, count: counted), fired: pendingFired)
+        sumOfSquares = 0
+        counted = 0
+        pendingFired = []
+        return reading
     }
 }

@@ -26,6 +26,17 @@ struct SoundsView: View {
                     }
                     .accessibilityIdentifier("teachLink")
                     .accessibilityHint("Opens the teach screen")
+                    NavigationLink {
+                        LevelsScreen(flow: flow)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Levels").font(.headline)
+                            Text("How loud each sound has to be to fire, and how sensitive the microphone is.")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityIdentifier("levelsLink")
+                    .accessibilityHint("Opens the levels screen")
                 }
                 Section("Detector") {
                     LabeledContent("State", value: flow.state.title)

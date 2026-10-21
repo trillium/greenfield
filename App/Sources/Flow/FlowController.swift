@@ -46,14 +46,18 @@ final class FlowController {
     let log: EventLog
     private let ruleStore: RuleStore
     private let phraseStore: PhraseStore
+    /// The trigger levels and input gain the detector is built with, and the Levels screen's side of it.
+    let levels: AppLevels
     /// The spoken line-enders, editable in Sounds.
     private(set) var phrases: [PhraseStore.Phrase]
     private var listener: SoundListener?
     private var observer: NSObjectProtocol?
 
     init(session: DictationSession, delivery: DeliveryService, models: ParrotModelStore, ruleStore: RuleStore,
-         log: EventLog = EventLog(url: nil), phraseStore: PhraseStore = PhraseStore(defaults: .standard)) {
+         log: EventLog = EventLog(url: nil), phraseStore: PhraseStore = PhraseStore(defaults: .standard),
+         levelsStore: NoiseLevelsStoring = InMemoryNoiseLevelsStore()) {
         self.phraseStore = phraseStore
+        levels = AppLevels(models: models, store: levelsStore)
         phrases = phraseStore.load()
         self.log = log
         self.session = session
@@ -69,6 +73,8 @@ final class FlowController {
             guard let self else { return false }
             return LineEnder.match(text, phrases: self.enabledPhrases) != nil
         }
+        levels.rebuild = { [weak self] in self?.startDetector() }
+        levels.listening = { [weak self] in (self?.isListening ?? false) && (self?.session.micReady ?? false) }
         observer = NotificationCenter.default.addObserver(forName: ParrotModelStore.didChange, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.startDetector() }
         }
@@ -105,14 +111,17 @@ final class FlowController {
         listener = nil
         do {
             let source = try models.source()
-            let detector = try SoundDetector(model: source.model, patternsJSON: source.patternsJSON)
+            let setup = levels.setup(for: source)
+            let detector = try SoundDetector(model: source.model, patternsJSON: setup.patternsJSON)
             modelName = source.name
             detectorLabels = detector.labels
             detectorProblem = nil
             log.add(.model, "sound detector listening with \(source.name) (\(detector.labels.count) classes)")
-            listener = SoundListener(detector: detector, bus: session.capture.bus) { events in
-                MainActor.assumeIsolated { [weak self] in self?.heard(events) }
-            }
+            let levels = levels
+            listener = SoundListener(
+                detector: detector, bus: session.capture.bus, gain: setup.gain,
+                onReading: { reading in MainActor.assumeIsolated { levels.receive(reading) } },
+                onEvents: { events in MainActor.assumeIsolated { [weak self] in self?.heard(events) } })
         } catch {
             detectorProblem = String(describing: error)
             log.add(.model, "sound detector could not start: \(error)")
