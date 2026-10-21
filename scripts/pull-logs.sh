@@ -69,11 +69,13 @@ umask 077
 redact() {
   perl -CSD -pe '
     s/[\x00-\x08\x0b-\x1f\x7f]/ /g;
+    s/([a-z][a-z0-9+.-]*:\/\/[^\s?#"\x27]*)[?#][^\s"\x27]*/$1/gi;
+    s/(:\/\/)[^\/\s@"\x27]+@/$1<redacted>@/g;
+    s/(^|\s)(--?[a-z][a-z-]*(?:key|token|secret|password))(\s+)\S+/$1$2$3<redacted>/gi;
     s/\b((?:x-[a-z-]*key|authorization|proxy-authorization|cookie|set-cookie|api[_-]?key|access[_-]?token|auth[_-]?token|token|secret|password|passwd|passphrase|bearer|key)["\x27]?\s*[:=]\s*["\x27]?)(?:(?:bearer|basic)\s+)?[^\s,;"\x27}&]+/$1<redacted>/gi;
     s/\bbearer\s+[^\s,;"\x27]+/Bearer <redacted>/gi;
     s/\b(?:tskey-[a-z0-9-]+|sk-[a-z0-9_-]{16,}|gh[pousr]_[a-z0-9]{20,}|xox[abprs]-[a-z0-9-]{10,}|AKIA[0-9A-Z]{16}\b)/<redacted>/gi;
     s/\beyJ[a-z0-9_-]{8,}\.[a-z0-9_-]+\.[a-z0-9_-]*/<redacted>/gi;
-    s/(:\/\/)[^\/\s:@]+:[^\/\s@]+@/$1<redacted>@/g;
     s/([a-z0-9+\/_-]{32,})/ my $t = $1; $t =~ m{^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$}i ? $t : "<redacted>" /gie;
     s/^(.{399}).+$/$1\x{2026}\n/s;
   '
@@ -86,7 +88,7 @@ keep_recent() {
     my ($since, $tail) = @ARGV; my $cutoff = time - $since; my $keep = 1; my (@head, @body);
     while (my $line = <STDIN>) {
       if ($line =~ /^#/) { push @head, $line; next }
-      if ($line =~ /^(\d{4})-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(Z?)/) {
+      if ($line =~ /^(\d{4})-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:\.\d+)?(Z?)/) {
         my @t = ($6, $5, $4, $3, $2 - 1, $1);
         my $at = eval { $7 eq "Z" ? timegm(@t) : timelocal(@t) } // $cutoff;
         $keep = $at >= $cutoff;
