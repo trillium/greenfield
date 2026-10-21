@@ -36,7 +36,20 @@ final class LogRedactorTests: XCTestCase {
         XCTAssertEqual(redactor.redact("key_configured=true inserted_count=3"), "key_configured=true inserted_count=3")
     }
 
+    func testUrlCredentialsQueriesLaunchArgumentsAndKnownSecretsAreMasked() {
+        let url = LogRedactor.clean("bad url https://admin:hunter2@host.example.ts.net:1234/path?token=abc#frag failed")
+        XCTAssertEqual(url, "bad url https://\(LogRedactor.mask)@host.example.ts.net:1234/path failed")
+        let plain = "http://100.64.0.1:1234/path ok"
+        XCTAssertEqual(LogRedactor.clean(plain), plain)
+        let launch = LogRedactor.clean("launch -live-key abc123def456 -live-files u01")
+        XCTAssertEqual(launch, "launch -live-key \(LogRedactor.mask) -live-files u01")
+        let known = "plain-value-without-a-pattern"
+        XCTAssertEqual(LogRedactor.clean("sent \(known) now", secrets: [known]), "sent \(LogRedactor.mask) now")
+        XCTAssertEqual(LogRedactor.clean("\"page down\" in 412 ms"), "\"page down\" in 412 ms")
+    }
+
     func testOneShortLinePerEntry() {
+        XCTAssertEqual(LogRedactor.clean("two\nlines"), "two / lines")
         let out = redactor.redact("a\r\nb\tc" + String(repeating: "z ", count: 400))
         XCTAssertFalse(out.contains("\n") || out.contains("\r") || out.contains("\t"))
         XCTAssertLessThanOrEqual(out.count, LogRedactor.maxLineLength)
