@@ -18,7 +18,7 @@ public final class MacInserter: TextInserter {
                 // Give the app up to a second to apply the keys; stop as soon as the text shows up.
                 var last = FocusedField.text()
                 for _ in 0..<20 {
-                    if let l = last, l != before, l.contains(text) { break }
+                    if let l = last, l != before, normalizeNewlines(l).contains(normalizeNewlines(text)) { break }
                     Thread.sleep(forTimeInterval: 0.05)
                     last = FocusedField.text()
                 }
@@ -89,30 +89,37 @@ public final class MacInserter: TextInserter {
     // MARK: typed fallback
 
     private func typeText(_ text: String) throws {
+        try typeWithKeys(text, using: CGEventKeySink(postReturn: { self.postKey(virtualKey: 36) }))   // 36 = Return
+    }
+}
+
+/// Types text as Unicode key events in short chunks. The line breaks were already turned into Return presses by `typeWithKeys`.
+private struct CGEventKeySink: TypingKeySink {
+    let postReturn: () -> Bool
+
+    func pressReturn() throws {
+        guard postReturn() else { throw InsertError.failed("could not post Return") }
+    }
+
+    func typeText(_ text: String) throws {
         let source = CGEventSource(stateID: .combinedSessionState)
-        let lines = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
-        for (i, line) in lines.enumerated() {
-            if i > 0 {
-                guard postKey(virtualKey: 36) else { throw InsertError.failed("could not post Return") }   // 36 = Return
+        let units = Array(text.utf16)
+        var start = 0
+        while start < units.count {
+            var end = min(start + 20, units.count)
+            // Don't split a surrogate pair across events.
+            if end < units.count, UTF16.isLeadSurrogate(units[end - 1]) { end -= 1 }
+            var chunk = Array(units[start..<end])
+            guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
+                  let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else {
+                throw InsertError.failed("could not create key events")
             }
-            let units = Array(line.utf16)
-            var start = 0
-            while start < units.count {
-                var end = min(start + 20, units.count)
-                // Don't split a surrogate pair across events.
-                if end < units.count, UTF16.isLeadSurrogate(units[end - 1]) { end -= 1 }
-                var chunk = Array(units[start..<end])
-                guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
-                      let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else {
-                    throw InsertError.failed("could not create key events")
-                }
-                down.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk)
-                up.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk)
-                down.post(tap: .cghidEventTap)
-                up.post(tap: .cghidEventTap)
-                Thread.sleep(forTimeInterval: 0.004)
-                start = end
-            }
+            down.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk)
+            up.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk)
+            down.post(tap: .cghidEventTap)
+            up.post(tap: .cghidEventTap)
+            Thread.sleep(forTimeInterval: 0.004)
+            start = end
         }
     }
 }

@@ -297,12 +297,14 @@ public final class RequestHandler {
         guard let id = (object["id"] as? String) ?? request.headers["x-request-id"], !id.isEmpty, id.count <= 128 else {
             return .error(400, "bad_request", "id is required (string, up to 128 characters)")
         }
-        guard let text = object["text"] as? String, !text.isEmpty else {
+        guard let sent = object["text"] as? String, !sent.isEmpty else {
             return .error(400, "bad_request", "text is required and must not be empty")
         }
-        guard text.utf8.count <= RequestHandler.maxTextBytes else {
+        guard sent.utf8.count <= RequestHandler.maxTextBytes else {
             return .error(413, "too_large", "text too large")
         }
+        // One line ending for everything downstream: a Return key press when typed, a line feed when pasted.
+        let text = normalizeNewlines(sent)
         var method: InsertMethod?
         if let raw = object["method"] {
             guard let s = raw as? String, let m = InsertMethod(rawValue: s) else {

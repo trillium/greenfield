@@ -66,7 +66,7 @@ The window switcher and the trackpad. Not used by the sending path; the phone's 
 ```json
 { "id": "6F1C2E0A-5B7D-4E8B-9C41-0A2D3B4C5D6E", "text": "Hello, world.", "source": "greenfield" }
 ```
-`id` is generated once per submitted text and reused on every resend; the agent answers a repeat with `200` and `"duplicate": true` and types nothing. The phone sends one line per submit, up to 256 KiB.
+`id` is generated once per submitted text and reused on every resend; the agent answers a repeat with `200` and `"duplicate": true` and types nothing. The phone sends the whole text box per submit, up to 256 KiB, with its line breaks as line feeds (`\n`): the agent pastes them as they are, or types each one as a Return key press when it types. The agent also accepts CRLF and turns every line ending into one line feed, and keeps empty lines and a trailing newline.
 
 | Status / `error` | Meaning in the app |
 |---|---|

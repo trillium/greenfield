@@ -40,7 +40,7 @@ See `../docs/logs.md`.
 | field    | notes |
 |----------|-------|
 | `id`     | required, up to 128 characters; a retry with the same id is answered `200` with `"duplicate": true` and inserts nothing (also accepted as `X-Request-Id`) |
-| `text`   | required, non-empty, up to 256 KiB. A bare newline (with `"method": "type"`) is a Return key press |
+| `text`   | required, non-empty, up to 256 KiB. Line breaks are kept: pasted as line feeds, or typed as one Return key press each (an empty line is two, a trailing newline is a final Return, a bare newline is one). CRLF and other line endings are turned into `\n` first. Read-back (`delivery`) compares the text with its newlines |
 | `method` | optional: `paste` or `type`; default is paste, retried by typing if the paste provably did not arrive |
 | `source` | optional label for the log (`phone`, ...) |
 

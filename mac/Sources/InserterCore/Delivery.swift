@@ -19,15 +19,21 @@ public enum DeliveryEvidence: Equatable {
     case notDelivered
 }
 
-/// Decides what the before and after text of the focused field proves. nil means unreadable.
+/// Decides what the before and after text of the focused field proves. nil means unreadable. Text is compared with its newlines
+/// (in whatever line ending the field uses), so words that arrived without their line breaks are not proof.
 public func judgeDelivery(before: String?, after: String?, text: String) -> DeliveryEvidence {
+    let sent = normalizeNewlines(text)
     // A bare Return or whitespace is a key press, not text: it may leave the field's contents unchanged
     // (a single-line field submits instead), so unchanged proves nothing.
-    if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .unconfirmed }
+    if sent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .unconfirmed }
     guard let before = before, let after = after else { return .unconfirmed }
-    if after == before { return .notDelivered }
+    let was = normalizeNewlines(before), now = normalizeNewlines(after)
+    if now == was {
+        // A final Return can submit and clear a one-line field, leaving it as it was.
+        return sent.hasSuffix("\n") ? .unconfirmed : .notDelivered
+    }
     // Something changed: it only counts as proof if our text is in there (apps may rewrite it).
-    return after.contains(text) ? .confirmed : .unconfirmed
+    return now.contains(sent) ? .confirmed : .unconfirmed
 }
 
 /// The order of attempts and what each outcome means, with the OS pieces injected so it can be tested.
