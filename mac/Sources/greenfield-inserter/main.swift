@@ -19,6 +19,10 @@ usage:
   greenfield-inserter health [--port N]       fast yes/no for this Mac's daemon; exit 0 only if everything is good
   greenfield-inserter doctor [--port N]       slower; for each failed check says what is wrong, why it matters and the fix
   greenfield-inserter macs health | doctor    the same for every remembered Mac, seen from here
+  greenfield-inserter logs [--tail N] [--since 30m]
+                                              this Mac's daemon log, redacted (no text, no keys); works with the daemon stopped
+  greenfield-inserter macs logs ALIAS [--tail N] [--since 30m]
+                                              that Mac's daemon log over the tailnet (GET /logs), redacted
   greenfield-inserter selftest [--port N]
                                               open a test window, send a test string and a Return through this Mac's
                                               own daemon, read them back; prints PASS or FAIL with the fix
@@ -44,6 +48,14 @@ environment: GREENFIELD_INSERTER_HOME overrides ~/.config/greenfield-inserter
 func fail(_ message: String, code: Int32 = 1) -> Never {
     FileHandle.standardError.write(Data((message + "\n").utf8))
     exit(code)
+}
+
+/// `--tail N` and `--since 30m` as the same query `GET /logs` takes, so both fail the same way.
+func logQuery(_ args: [String]) -> Result<LogQuery, LogQueryError> {
+    var parts: [String] = []
+    if let tail = option("--tail", in: args) { parts.append("tail=\(tail)") }
+    if let since = option("--since", in: args) { parts.append("since=\(since)") }
+    return LogQuery.parse(query: parts.joined(separator: "&"))
 }
 
 func option(_ name: String, in args: [String]) -> String? {
@@ -87,7 +99,8 @@ case "serve":
     var server: HTTPServer!
     let handler = RequestHandler(keys: keys, probe: MacSystemProbe(), inserter: MacInserter(),
                                  name: { nameOverride ?? macName.current() }, listening: { server.listening() },
-                                 identity: tailscale, record: DeliveryLedger(paths: paths), clients: ClientLedger(paths: paths), discovery: discovery, logger: logger)
+                                 identity: tailscale, record: DeliveryLedger(paths: paths), clients: ClientLedger(paths: paths), discovery: discovery, logger: logger,
+                                 logSource: FileLogSource(file: paths.logFile))
     logger.log("starting \(RequestHandler.serviceName) \(RequestHandler.version) name=\(nameOverride ?? macName.current())")
     logger.log("authorization: loopback, same tailnet user\(keys.isConfigured ? ", or the optional key" : "") (no key needed)")
     if !MacSystemProbe().accessibilityTrusted { logger.log("Accessibility not granted; run `greenfield-inserter permissions`") }
@@ -126,6 +139,17 @@ case "key":
     case "status":
         print(keys.isConfigured ? "optional key set (\(paths.keyFile.path))" : "no key set (not needed: devices of this Mac's tailnet user are authorized by identity)")
     default: fail(usage, code: 2)
+    }
+
+case "logs":
+    switch logQuery(args) {
+    case .failure(let e): fail("logs: \(e.message)", code: 2)
+    case .success(let query):
+        let source = FileLogSource(file: paths.logFile)
+        guard source.available else { fail("no log yet at \(paths.logFile.path); the daemon creates it when it starts") }
+        let page = LogPage.build(lines: source.read(query, now: Date()), query: query)
+        page.lines.forEach { print($0) }
+        if page.truncated { FileHandle.standardError.write(Data("(showing the newest \(page.lines.count) lines; --tail N asks for more, up to \(LogQuery.maxTail))\n".utf8)) }
     }
 
 case "name":
@@ -387,6 +411,19 @@ case "macs":
         print(done.map { doctor ? formatDoctor(label: $0.0, checks: $0.1) : formatHealth(label: $0.0, checks: $0.1) }
             .joined(separator: doctor ? "\n\n" : "\n"))
         exit(done.allSatisfy { isHealthy($0.1) } ? 0 : 1)
+    case "logs":
+        guard args.count >= 3, !args[2].hasPrefix("--") else { fail("usage: macs logs ALIAS [--tail N] [--since 30m]", code: 2) }
+        let m = find(args[2])
+        switch logQuery(args) {
+        case .failure(let e): fail("macs logs: \(e.message)", code: 2)
+        case .success(let query):
+            switch InserterClient.fetchLogs(m, query: query) {
+            case .lines(let lines, let truncated):
+                lines.forEach { print($0) }
+                if truncated { FileHandle.standardError.write(Data("(\(m.alias): showing the newest \(lines.count) lines; --tail N asks for more)\n".utf8)) }
+            case .failed(let why): fail(why)
+            }
+        }
     case "ssh":
         guard args.count >= 4, let m = all.first(where: { $0.alias == args[2] }) else { fail("usage: macs ssh ALIAS USER@HOST (alias must exist)", code: 2) }
         var updated = m; updated.ssh = args[3]

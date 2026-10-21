@@ -267,3 +267,40 @@ extension InserterClient {
         }
     }
 }
+
+// MARK: - logs
+
+public enum LogsOutcome: Equatable {
+    case lines([String], truncated: Bool)
+    /// Plain words for the person at the terminal, with what to do.
+    case failed(String)
+}
+
+extension InserterClient {
+    /// `GET /logs` on a remembered Mac. The lines are already redacted by that daemon; they are redacted again here before anything is shown.
+    public static func fetchLogs(_ mac: KnownMac, query: LogQuery, timeout: TimeInterval = 10) -> LogsOutcome {
+        var path = "/logs?tail=\(query.tail)"
+        if let since = query.since { path += "&since=\(Int(since))s" }
+        switch request(mac, method: "GET", path: path, body: nil, timeout: timeout) {
+        case .failure(let e): return .failed("\(mac.alias) is unreachable (\(e.message)); check `tailscale status` and `macs check`")
+        case .success(let (code, body)): return interpretLogs(httpStatus: code, body: body, alias: mac.alias)
+        }
+    }
+
+    public static func interpretLogs(httpStatus: Int, body: Data, alias: String) -> LogsOutcome {
+        let object = (try? JSONSerialization.jsonObject(with: body) as? [String: Any]) ?? [:]
+        switch httpStatus {
+        case 200:
+            guard let lines = object["lines"] as? [String] else { return .failed("\(alias) answered without a log; update its daemon") }
+            return .lines(LogRedactor().redact(lines: lines), truncated: object["truncated"] as? Bool ?? false)
+        case 404 where object["error"] == nil:
+            return .failed("\(alias) runs a daemon that predates `GET /logs`; update it (`make -C mac install` there)")
+        case 404: return .failed("\(alias) has no log file yet; restart its daemon")
+        case 401: return .failed("\(alias) refused this device: it must be on the same tailnet user as that Mac")
+        case 403: return .failed("\(alias) shows logs only to devices of its own tailnet user, not to a key")
+        case 429: return .failed("\(alias) is rate limiting log requests; wait a minute and try again")
+        case 503: return .failed("\(alias) cannot verify who is calling (its Tailscale is not answering)")
+        default: return .failed("\(alias) answered HTTP \(httpStatus): \(LogRedactor().redact(object["message"] as? String ?? "failed"))")
+        }
+    }
+}

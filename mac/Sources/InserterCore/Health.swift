@@ -57,6 +57,8 @@ public struct DaemonSnapshot: Equatable {
     public var uptime: Int?
     /// nil for daemons that do not report it.
     public var accessibilityAtStart: Bool?
+    /// Can `GET /logs` be served? nil for daemons that predate the route.
+    public var logsAvailable: Bool?
 
     public static func parse(_ body: Data) -> DaemonSnapshot? {
         guard let o = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
@@ -71,7 +73,8 @@ public struct DaemonSnapshot: Equatable {
             auth: o["auth"] as? String, identityOK: o["identity_ok"] as? Bool, tailnetUser: o["tailnet_user"] as? String,
             canInsert: CanInsert.parse(o["evidence"]), minClientVersion: o["min_client_version"] as? String,
             appCompatible: AppCompat.parse(o["app_compatible"]), build: BuildIdentity.parse(o["build"]),
-            uptime: o["uptime_s"] as? Int, accessibilityAtStart: o["accessibility_at_start"] as? Bool)
+            uptime: o["uptime_s"] as? Int, accessibilityAtStart: o["accessibility_at_start"] as? Bool,
+            logsAvailable: o["logs_available"] as? Bool)
     }
 }
 
@@ -200,6 +203,7 @@ private func titleFor(_ id: String) -> String {
     case "version": return "Version"
     case "can-insert": return "Can actually insert text"
     case "app-compatible": return "App compatible"
+    case "logs": return "Logs available"
     default: return id
     }
 }
@@ -274,6 +278,7 @@ private func okChecks(_ s: DaemonSnapshot, subject: HealthSubject, remote: Bool,
     } else {
         out.append(HealthCheck("app-compatible", titleFor("app-compatible"), .skip, detail: "this daemon is too old to track the apps it has seen"))
     }
+    out.append(logsCheck(s.logsAvailable, remote: remote, onThatMac: onThatMac, bin: bin))
     out.append(canInsertCheck(s.canInsert, remote: remote, onThatMac: onThatMac, bin: bin))
     return out
 }
@@ -285,6 +290,21 @@ private func ago(_ date: Date?, now: Date = Date()) -> String {
     if s < 5400 { return "\(s / 60) minutes ago" }
     if s < 172800 { return "\(s / 3600) hours ago" }
     return "\(s / 86400) days ago"
+}
+
+/// "Logs available": the daemon can serve `GET /logs` (so `make logs` and `macs logs` work). Not a failure when it cannot: dictation does not depend on it.
+func logsCheck(_ available: Bool?, remote: Bool, onThatMac: String, bin: String) -> HealthCheck {
+    let title = titleFor("logs")
+    switch available {
+    case nil:
+        return HealthCheck("logs", title, .skip, detail: "this daemon is too old to serve its log")
+    case true?:
+        return HealthCheck("logs", title, .pass, detail: "\(remote ? "`macs logs ALIAS`" : "`logs --tail 100`") or `make logs` shows the recent log, without text or keys")
+    case false?:
+        return HealthCheck("logs", title, .warn, detail: "the daemon has no readable log file",
+            why: "Without its log nobody can see why something failed on that Mac without sitting at it.",
+            fix: "\(onThatMac): restart the daemon (`\(bin) restart`); it creates the log when it starts.")
+    }
 }
 
 func canInsertCheck(_ c: CanInsert?, remote: Bool, onThatMac: String, bin: String) -> HealthCheck {
@@ -458,7 +478,8 @@ func keyNoteRelevant(_ checks: [HealthCheck]) -> Bool {
     }
 }
 
-public func isHealthy(_ checks: [HealthCheck]) -> Bool { checks.allSatisfy { $0.status == .pass } }
+/// Everything must pass, except "Logs available": it is shown (and says how to fix it) but does not make a Mac that delivers text unhealthy.
+public func isHealthy(_ checks: [HealthCheck]) -> Bool { checks.allSatisfy { $0.status == .pass || $0.id == "logs" } }
 
 private func mark(_ s: HealthCheck.Status) -> String {
     switch s { case .pass: return "ok  "; case .fail: return "FAIL"; case .warn: return "warn"; case .skip: return "skip" }

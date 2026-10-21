@@ -3,6 +3,8 @@ import Foundation
 public struct HTTPRequest: Equatable {
     public var method: String
     public var path: String
+    /// The raw query string after `?` (empty when there is none). Only `GET /logs` reads it.
+    public var query: String
     /// Header names are lowercased.
     public var headers: [String: String]
     public var body: Data
@@ -12,7 +14,8 @@ public struct HTTPRequest: Equatable {
     public var peerAddress: String?
 
     public init(method: String, path: String, headers: [String: String] = [:], body: Data = Data(),
-                fromLoopback: Bool = false, peerAddress: String? = nil) {
+                fromLoopback: Bool = false, peerAddress: String? = nil, query: String = "") {
+        self.query = query
         self.peerAddress = peerAddress
         self.method = method
         self.path = path
@@ -67,6 +70,7 @@ public struct HTTPResponse: Equatable {
         case 413: return "Payload Too Large"
         case 423: return "Locked"
         case 426: return "Upgrade Required"
+        case 429: return "Too Many Requests"
         case 431: return "Request Header Fields Too Large"
         case 500: return "Internal Server Error"
         case 501: return "Not Implemented"
@@ -132,8 +136,10 @@ public enum HTTPParser {
         let bodyStart = headEnd.upperBound
         guard buffer.count - bodyStart >= length else { return .incomplete }
         let body = buffer[bodyStart..<(bodyStart + length)]
-        // Query strings are ignored; routing is by path only.
-        let path = String(parts[1]).split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? ""
-        return .complete(HTTPRequest(method: String(parts[0]).uppercased(), path: path, headers: headers, body: Data(body)))
+        // Routing is by path only; the query string is kept for the one route that takes parameters (`GET /logs`).
+        let target = String(parts[1]).split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        let path = target.first.map(String.init) ?? ""
+        let query = target.count > 1 ? String(target[1]) : ""
+        return .complete(HTTPRequest(method: String(parts[0]).uppercased(), path: path, headers: headers, body: Data(body), query: query))
     }
 }

@@ -41,6 +41,8 @@ public final class RequestHandler {
     public static let serviceName = "greenfield-inserter"
     public static var version: String { BuildInfo.version }
     public static let maxTextBytes = 256 * 1024
+    /// The paths this daemon answers; anything else is logged as "(unknown)".
+    static let routes: Set<String> = ["/health", "/status", "/text", "/peers", "/logs"]
 
     private let keys: KeyVerifier
     private let probe: SystemProbe
@@ -56,6 +58,8 @@ public final class RequestHandler {
     private let minClientVersion: String
     private var build: BuildIdentity { RunningBuild.identity }
     private let logger: RequestLogger?
+    private let logSource: LogSource?
+    private let logLimiter: LogRateLimiter
     private let started: Date
     private let now: () -> Date
     private let insertLock = NSLock()
@@ -65,7 +69,8 @@ public final class RequestHandler {
                 name: @escaping () -> String, listening: @escaping () -> [String] = { [] },
                 identity: TailnetIdentity? = nil, record: DeliveryRecord? = nil, clients: ClientRecord? = nil, discovery: ComputerDiscovery? = nil,
                 version: String = BuildInfo.version, minClientVersion: String = BuildInfo.minClientVersion,
-                logger: RequestLogger? = nil, now: @escaping () -> Date = Date.init) {
+                logger: RequestLogger? = nil, logSource: LogSource? = nil, logLimiter: LogRateLimiter = LogRateLimiter(),
+                now: @escaping () -> Date = Date.init) {
         self.keys = keys
         self.probe = probe
         self.inserter = inserter
@@ -79,25 +84,31 @@ public final class RequestHandler {
         self.version = version
         self.minClientVersion = minClientVersion
         self.logger = logger
+        self.logSource = logSource
+        self.logLimiter = logLimiter
         self.now = now
         self.started = now()
     }
 
     public func handle(_ request: HTTPRequest) -> HTTPResponse {
         let response = route(request)
-        logger?.log("\(request.method) \(request.path) -> \(response.status)")
+        // The path is logged only when it is one of ours: an unknown path is caller-controlled text.
+        let path = LogSafe.path(request.path, known: RequestHandler.routes)
+        logger?.log("\(LogSafe.token(request.method)) \(path) -> \(response.status)")
         return response
     }
 
     private func route(_ request: HTTPRequest) -> HTTPResponse {
         if request.path == "/health" { return health(request) }
-        let known = ["/status": "GET", "/text": "POST", "/peers": "GET"]
+        let known = ["/status": "GET", "/text": "POST", "/peers": "GET", "/logs": "GET"]
         guard let wanted = known[request.path] else {
             return .error(404, "not_found", "unknown path")
         }
         // Authorize before revealing anything else, including whether the method is right.
         let (denied, via) = authorize(request)
         if let denied = denied { return denied }
+        // Logs are for a person debugging, so a Mac with a wrong or old app still answers them: no app-version gate here.
+        if request.path == "/logs" { return logs(request, via: via) }
         if let refused = checkAppVersion(request) { return refused }
         guard request.method == wanted else {
             var r = HTTPResponse.error(405, "method_not_allowed", "use \(wanted)")
@@ -183,6 +194,41 @@ public final class RequestHandler {
         return .json(200, body)
     }
 
+    /// The daemon's own recent log lines, redacted, newest last. Same tailnet-identity authorization as everything else, but not the
+    /// optional key (a device of another tailnet user may insert text, not read this Mac's history); a limit on the number of
+    /// requests and on the size of the answer. Unknown parameters, a missing log or a refused identity never fall back to "show it".
+    private func logs(_ request: HTTPRequest, via: Via) -> HTTPResponse {
+        guard request.method == "GET" else {
+            var r = HTTPResponse.error(405, "method_not_allowed", "use GET")
+            r.headers["Allow"] = "GET"
+            return r
+        }
+        guard via != .key else {
+            return .error(403, "logs_need_same_user", "logs are only shown to this Mac and to devices of its tailnet user")
+        }
+        guard let source = logSource, source.available else {
+            return .error(404, "no_log", "this daemon has no log file to show")
+        }
+        let query: LogQuery
+        switch LogQuery.parse(query: request.query) {
+        case .success(let q): query = q
+        case .failure(let e): return .error(400, "bad_request", e.message)
+        }
+        if let wait = logLimiter.admit(now: now()) {
+            var r = HTTPResponse.error(429, "rate_limited", "too many log requests; try again in \(wait) seconds")
+            r.headers["Retry-After"] = String(wait)
+            return r
+        }
+        let page = LogPage.build(lines: source.read(query, now: now()), query: query)
+        logger?.log("logs served lines=\(page.lines.count) bytes=\(page.bytes) truncated=\(page.truncated)")
+        return .json(200, [
+            "ok": true, "service": RequestHandler.serviceName, "version": version, "name": name(),
+            "generated_at": ISO8601DateFormatter().string(from: now()),
+            "tail": query.tail, "since_s": query.since.map { Int($0) } ?? NSNull(),
+            "count": page.lines.count, "bytes": page.bytes, "truncated": page.truncated, "lines": page.lines,
+        ])
+    }
+
     private func status() -> HTTPResponse { .json(200, statusFields()) }
 
     /// The delivery line for GET /status, in the shapes the phone reads: flat `can_insert` (bool),
@@ -226,6 +272,8 @@ public final class RequestHandler {
             "key_configured": keys.verify(nil) != .notConfigured,
             "tailnet_user": identity?.selfLogin() ?? NSNull(),
             "identity_ok": identity?.selfLogin() != nil,
+            "logs_available": logSource?.available ?? false,
+            "logs": ["route": "/logs", "max_lines": LogQuery.maxTail, "max_bytes": LogPage.maxBytes],
         ].merging(deliveryFields()) { _, new in new }
     }
 
@@ -249,7 +297,9 @@ public final class RequestHandler {
             }
             method = m
         }
-        let source = (object["source"] as? String).map { String($0.prefix(32)) } ?? "unknown"
+        let source = (object["source"] as? String).map { LogSafe.source($0) } ?? "unknown"
+
+        let logID = LogSafe.id(id)
 
         // One request at a time: a concurrent retry of the same id waits here and then
         // finds the first attempt's result in the cache.
@@ -259,26 +309,26 @@ public final class RequestHandler {
         if let previous = dedupe.lookup(id) {
             var body = (try? JSONSerialization.jsonObject(with: previous.body) as? [String: Any]) ?? ["ok": true]
             body["duplicate"] = true
-            logger?.log("text id=\(id) source=\(source) duplicate")
+            logger?.log("text id=\(logID) source=\(source) duplicate")
             return .json(200, body)
         }
         if probe.screenLocked {
-            logger?.log("text id=\(id) source=\(source) refused: screen locked")
+            logger?.log("text id=\(logID) source=\(source) refused: screen locked")
             return .error(423, "screen_locked", "the screen is locked")
         }
         if probe.secureInputEnabled {
-            logger?.log("text id=\(id) source=\(source) refused: secure input")
+            logger?.log("text id=\(logID) source=\(source) refused: secure input")
             return .error(409, "secure_input", "secure input is on (a password field is focused)")
         }
         if !probe.accessibilityTrusted {
-            logger?.log("text id=\(id) source=\(source) refused: no accessibility permission")
+            logger?.log("text id=\(logID) source=\(source) refused: no accessibility permission")
             return .error(503, "accessibility_not_granted", "grant Accessibility to greenfield-inserter in System Settings")
         }
         do {
             let used = try inserter.insert(text, method: method)
             insertedCount += 1
             if used.delivery == .confirmed { record?.recordSuccess(source: "delivery") }
-            logger?.log("text id=\(id) source=\(source) sent chars=\(text.count) method=\(used.method.rawValue) delivery=\(used.delivery.rawValue)")
+            logger?.log("text id=\(logID) source=\(source) sent chars=\(text.count) method=\(used.method.rawValue) delivery=\(used.delivery.rawValue)")
             let response = HTTPResponse.json(200, [
                 "ok": true, "id": id, "chars": text.count, "method": used.method.rawValue,
                 "delivery": used.delivery.rawValue,
@@ -289,10 +339,10 @@ public final class RequestHandler {
             return .error(503, "accessibility_not_granted", "grant Accessibility to greenfield-inserter in System Settings")
         } catch InsertError.notDelivered {
             record?.recordFailure(source: "delivery", detail: "the focused field did not change after the keys were sent")
-            logger?.log("text id=\(id) source=\(source) not delivered: the focused field did not change")
+            logger?.log("text id=\(logID) source=\(source) not delivered: the focused field did not change")
             return .error(502, "not_delivered", "the keys were sent but the focused field did not change; nothing was inserted")
         } catch {
-            logger?.log("text id=\(id) source=\(source) failed: \(error)")
+            logger?.log("text id=\(logID) source=\(source) failed: \(error)")
             return .error(500, "insert_failed", "could not insert the text")
         }
     }

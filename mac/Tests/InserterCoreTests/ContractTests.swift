@@ -36,11 +36,16 @@ final class ContractTests: XCTestCase {
         func recent() -> [ClientSighting] { versions.enumerated().map { ClientSighting(version: $0.element, at: Date(timeIntervalSince1970: 1_800_000_000 - Double($0.offset) * 60)) } }
     }
 
+    struct Logs: LogSource {
+        var available: Bool { true }
+        func read(_ query: LogQuery, now: Date) -> [String] { [] }
+    }
+
     func makeHandler(accessibility: Bool = true, evidence: CanInsert.State = .ok, clients: [String] = []) -> RequestHandler {
         let probe = StubProbe(); probe.accessibilityTrusted = accessibility
         return RequestHandler(keys: StubKeys(), probe: probe, inserter: SpyInserter(), name: { "Example Mac" },
                               listening: { ["100.64.0.10:47821", "127.0.0.1:47821"] }, identity: Identity(),
-                              record: Evidence(evidence), clients: Seen(clients), version: "0.2.0", minClientVersion: "0.2.0")
+                              record: Evidence(evidence), clients: Seen(clients), version: "0.2.0", minClientVersion: "0.2.0", logSource: Logs())
     }
 
     /// Volatile values replaced so a recorded file is stable.

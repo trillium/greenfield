@@ -40,6 +40,12 @@
     "100.64.0.10:47821",
     "127.0.0.1:47821"
   ],
+  "logs" : {
+    "max_bytes" : 262144,
+    "max_lines" : 2000,
+    "route" : "\/logs"
+  },
+  "logs_available" : true,
   "min_client_version" : "0.2.0",
   "name" : "Example Mac",
   "ok" : true,

@@ -11,7 +11,8 @@ final class HealthTests: XCTestCase {
                        auth: "tailnet", identityOK: identity, tailnetUser: "me@example",
                        canInsert: CanInsert(state: insert, at: Date().addingTimeInterval(-120), source: "selftest", detail: "the field stayed empty"),
                        minClientVersion: "0.2.0", appCompatible: appCompat,
-                       build: BuildIdentity(version: version, commit: "abc1234", binarySha: "0123456789abcdef", startedAt: nil), uptime: 600)
+                       build: BuildIdentity(version: version, commit: "abc1234", binarySha: "0123456789abcdef", startedAt: nil), uptime: 600,
+                       logsAvailable: true)
     }
     let local = HealthSubject.local(port: 47821)
     let remote = HealthSubject.remote(alias: "book", host: "book.ts.net", port: 47821)
@@ -24,7 +25,7 @@ final class HealthTests: XCTestCase {
     func testAllGoodIsHealthy() {
         let cs = checks(.ok(snap()))
         XCTAssertTrue(isHealthy(cs))
-        XCTAssertEqual(cs.map(\.id), ["daemon", "listening", "auth", "accessibility", "unlocked", "secure-input", "version", "app-compatible", "can-insert"])
+        XCTAssertEqual(cs.map(\.id), ["daemon", "listening", "auth", "accessibility", "unlocked", "secure-input", "version", "app-compatible", "logs", "can-insert"])
         XCTAssertTrue(formatHealth(label: "mini0", checks: cs).hasPrefix("mini0: HEALTHY"))
     }
 
@@ -87,7 +88,7 @@ final class HealthTests: XCTestCase {
         XCTAssertTrue(out.contains("1 problem found"))
         XCTAssertTrue(out.contains("wrong:")); XCTAssertTrue(out.contains("why:")); XCTAssertTrue(out.contains("fix:"))
         XCTAssertTrue(out.contains("Privacy & Security > Accessibility"))
-        XCTAssertTrue(formatDoctor(label: "x", checks: checks(.ok(snap()))).contains("all 9 checks passed"))
+        XCTAssertTrue(formatDoctor(label: "x", checks: checks(.ok(snap()))).contains("all 10 checks passed"))
     }
 
     func testParseSnapshot() {
