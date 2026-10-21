@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Greenfield</title>
+  <meta name="description" content="Dictate on this device and have the words typed on your computer.">
+  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Greenfield">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <main id="screens">
+    <section id="screen-dictate" class="screen" aria-labelledby="h-dictate">
+      <h1 id="h-dictate">Dictate</h1>
+      <div class="card">
+        <label for="target">Send to</label>
+        <select id="target"></select>
+        <p id="ready-line" class="status" role="status"></p>
+      </div>
+      <p id="speech-note" class="note" role="status" hidden></p>
+      <div class="box">
+        <div id="mirror" class="mirror" aria-hidden="true"></div>
+        <textarea id="text" aria-label="Dictated text. Each line break is sent as the Enter key." placeholder="Tap Dictate, or type here"
+                  autocapitalize="sentences" spellcheck="true" rows="6"></textarea>
+      </div>
+      <p id="interim" class="interim" aria-live="polite"></p>
+      <div class="row">
+        <button id="dictate" type="button" class="primary" aria-pressed="false">Dictate</button>
+        <button id="newline" type="button">New line <span aria-hidden="true">&#x21B5;</span></button>
+        <button id="clear" type="button">Clear</button>
+      </div>
+      <p id="listen-state" class="status" role="status"></p>
+    </section>
+
+    <section id="screen-computers" class="screen" aria-labelledby="h-computers" hidden>
+      <h1 id="h-computers">Computers</h1>
+      <p class="note">Each computer runs a small helper. To use one from this browser, pair it once: run <code>greenfield-inserter pair</code> on that computer and type the code it shows.</p>
+      <p id="discover-note" class="note" role="status" hidden></p>
+      <ul id="computer-list" class="list"></ul>
+      <form id="pair-form" class="card" hidden autocomplete="off">
+        <h2 id="pair-title">Pair</h2>
+        <label for="pair-code">Code from the computer</label>
+        <input id="pair-code" inputmode="text" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false"
+               maxlength="12" placeholder="ABCD-EFGH">
+        <p id="pair-note" class="note" role="status"></p>
+        <div class="row">
+          <button id="pair-go" type="submit" class="primary">Pair</button>
+          <button id="pair-cancel" type="button">Cancel</button>
+        </div>
+      </form>
+      <h2 id="h-waiting">Waiting to send</h2>
+      <p id="waiting-empty" class="note">Nothing is waiting.</p>
+      <ul id="waiting-list" class="list" aria-labelledby="h-waiting"></ul>
+      <div class="row"><button id="retry-all" type="button" hidden>Retry all</button></div>
+    </section>
+
+    <section id="screen-help" class="screen" aria-labelledby="h-help" hidden>
+      <h1 id="h-help">Help</h1>
+      <div class="card">
+        <h2>Health</h2>
+        <ul id="health-list" class="list"></ul>
+        <button id="health-check" type="button">Check every computer</button>
+      </div>
+      <div class="card">
+        <h2>How it works</h2>
+        <p>Say or type text here, then Submit. The helper on the chosen computer types it where the cursor is. A line break in the box is sent as the Enter key; the &#x21B5; mark shows where.</p>
+        <p>Only text is sent to a computer. Audio is never sent to it.</p>
+      </div>
+      <div class="card">
+        <h2>What it cannot do</h2>
+        <ul class="bullets">
+          <li>Listen in the background: dictation works only while this page is open and in front.</li>
+          <li>Be a share target, or react to sounds, or control windows or the pointer.</li>
+          <li>Use the microphone on a page that is not https (or localhost).</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h2>Privacy</h2>
+        <p>Speech is recognised by your browser. On iPhone and iPad (Safari) and in Chrome, the browser may send the audio to Apple or Google to do it; this page cannot change that. Typing into the box sends nothing anywhere until you press Submit.</p>
+        <p>The pairing token stays on this device and goes only to the computer it was made for. It lasts a day.</p>
+      </div>
+      <div class="card">
+        <h2>This device</h2>
+        <button id="forget-all" type="button" class="danger">Forget all pairings</button>
+        <p id="version-line" class="note"></p>
+      </div>
+    </section>
+  </main>
+
+  <div id="submit-bar" class="submit-bar">
+    <p id="send-note" class="status" role="status"></p>
+    <button id="submit" type="button" class="primary wide">Submit</button>
+  </div>
+
+  <nav class="tabbar" aria-label="Screens">
+    <a id="tab-dictate" href="#dictate" class="tab" aria-current="page">Dictate</a>
+    <a id="tab-computers" href="#computers" class="tab">Computers <span id="queue-badge" class="badge" hidden></span></a>
+    <a id="tab-help" href="#help" class="tab">Help</a>
+  </nav>
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>

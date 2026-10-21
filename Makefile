@@ -1,8 +1,8 @@
 SHELL := /bin/bash
 BASE ?=
-SCRIPT_FILES := $(wildcard scripts/*.sh) $(wildcard mac/scripts/*.sh) mac/install.sh $(wildcard tools/*/*.sh) $(wildcard .githooks/*)
+SCRIPT_FILES := $(wildcard scripts/*.sh) $(wildcard mac/scripts/*.sh) mac/install.sh $(wildcard tools/*/*.sh) $(wildcard pwa/test/*.sh) $(wildcard .githooks/*)
 
-.PHONY: help windows logs test-ui test-kit-version test-pull-logs hooks check-commits test-commit-tooling test-mac check-parity release-check doctor generate build device-compile test archive archive-unsigned version release test-version check lint shell secrets hooks stub-receiver stub-receiver-test spike-build spike-audio core clean
+.PHONY: help windows pwa-serve test-pwa test-pwa-smoke logs test-ui test-kit-version test-pull-logs hooks check-commits test-commit-tooling test-mac check-parity release-check doctor generate build device-compile test archive archive-unsigned version release test-version check lint shell secrets hooks stub-receiver stub-receiver-test spike-build spike-audio core clean
 help: ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/'
 
@@ -33,7 +33,7 @@ archive: ## signed release archive (needs Apple signing; see docs/signing.md)
 archive-unsigned: ## unsigned archive: proves it compiles, cannot be uploaded
 	SIGNING=none scripts/archive.sh
 
-check: shell lint secrets test-version test-kit-version stub-receiver-test test test-ui test-mac windows test-pull-logs check-commits test-commit-tooling $(if $(SIBLING),check-parity) ## the single green gate (phone, Mac, commit messages); must pass at every commit
+check: shell lint secrets test-version test-kit-version stub-receiver-test test test-ui test-mac windows test-pwa test-pull-logs check-commits test-commit-tooling $(if $(SIBLING),check-parity) ## the single green gate (phone, Mac, commit messages); must pass at every commit
 shell: ## syntax + shellcheck
 	@for f in $(SCRIPT_FILES); do bash -n "$$f" || exit 1; done
 	shellcheck -x $(SCRIPT_FILES)
@@ -58,6 +58,12 @@ test-commit-tooling: ## tests for the validator, hook installer, check-commits, 
 	scripts/test-commit-tooling.sh
 test-mac: ## unit tests of the Mac daemon
 	$(MAKE) -C mac test
+pwa-serve: ## serve the web app (pwa/) on this computer: on GREENFIELD_PWA_PORT, this computer only (docs/pwa.md has the phone recipe)
+	@. scripts/load-env.sh && node pwa/server.mjs
+test-pwa: ## unit tests of the web app and its server, with fakes (needs Node 20+; docs/pwa.md)
+	node --test pwa/test/
+test-pwa-smoke: ## the web app in a real Chrome against a real helper (needs chrome-devtools-axi and Go; docs/pwa.md)
+	pwa/test/smoke.sh
 windows: ## the Windows daemon: gofmt, go vet (native and windows/amd64, windows/arm64), tests with fakes, then both .exe files in build/windows (needs Go; docs/windows.md)
 	$(MAKE) -C windows all
 check-parity: ## compare the shared files with the sibling repo: make check-parity SIBLING=<path> (V=-v for the diff)
