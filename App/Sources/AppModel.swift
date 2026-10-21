@@ -96,11 +96,18 @@ final class AppModel {
         return session.capture.isRunning ? nil : "The microphone is not available right now. Try again in a moment."
     }
 
+    private static func emptyDefaults() -> UserDefaults {
+        let name = "ui-test-isolated"
+        UserDefaults.standard.removePersistentDomain(forName: name)
+        return UserDefaults(suiteName: name) ?? .standard
+    }
+
     static func live() -> AppModel {
-        let targets = TargetStore(keys: KeychainKeyStore())
-        // `-ui-test-isolated YES`: the UI tests see the app as a first install, not shaped by this build's preset computers and trainers
-        // or by whatever answers on the local network (see PeerDirectory.startBonjour).
+        // `-ui-test-isolated YES`: the UI tests see the app as a first install: no saved computers or queued texts, none of this
+        // build's preset computers and trainers, nothing found on the local network (see PeerDirectory.startBonjour).
         let isolated = UserDefaults.standard.bool(forKey: "ui-test-isolated")
+        let targets = isolated ? TargetStore(defaults: Self.emptyDefaults(), keys: MemoryKeyStore())
+                               : TargetStore(keys: KeychainKeyStore())
         if !isolated { targets.seedPresets(Bundle.main.object(forInfoDictionaryKey: "GreenfieldPresetComputers") as? String) }
         // `-selftest-fakemic YES`: treat the microphone as running and feed the bus from files (the acceptance scenarios on a phone
         // nobody is speaking to). The detector, rules, buffer, speech model and delivery are all the real ones.
@@ -109,7 +116,7 @@ final class AppModel {
         if fake { _ = machine.handle(.started) }
         let session = DictationSession(transcriber: ParakeetTranscriber(), listen: machine)
         if fake { session.attach() }
-        return AppModel(session: session, outbox: Outbox(url: Outbox.standardURL), targets: targets,
+        return AppModel(session: session, outbox: Outbox(url: isolated ? nil : Outbox.standardURL), targets: targets,
                         log: EventLog(url: EventLog.standardURL),
                         presetTrainers: isolated ? nil : Bundle.main.object(forInfoDictionaryKey: "GreenfieldPresetTrainers") as? String,
                         supportLogURL: SupportLog.standardURL, levelsStore: AppLevels.standardStore())
