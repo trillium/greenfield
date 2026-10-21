@@ -21,7 +21,7 @@ cd "$here"
 binary="${SIGNED_BINARY:-}"
 # shellcheck source-path=SCRIPTDIR source=../scripts/load-env.sh
 . "$here/../scripts/load-env.sh"
-port="${PORT:-${GREENFIELD_PORT:-}}"   # empty: the daemon's own default, read back after the install
+port="${PORT:-${GREENFIELD_PORT:-}}"   # empty: the build's own default, asked of it after the install
 label="${LABEL:-local.greenfield.inserter}"
 prefix="${PREFIX:-$HOME/.local/share/greenfield-inserter}"
 config="${GREENFIELD_INSERTER_HOME:-$HOME/.config/greenfield-inserter}"

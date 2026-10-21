@@ -22,7 +22,7 @@ FAST=0
 [ "${1:-}" = "--fast" ] && FAST=1
 
 # Test counts at the start of the loop. Fewer tests or assertions means a test was weakened or removed.
-MIN_PHONE_TESTS=222 MIN_MAC_TESTS=141 MIN_PHONE_ASSERTS=662 MIN_MAC_ASSERTS=474
+MIN_PHONE_TESTS=222 MIN_MAC_TESTS=146 MIN_PHONE_ASSERTS=662 MIN_MAC_ASSERTS=474
 
 POINTS=0
 MAX=0
