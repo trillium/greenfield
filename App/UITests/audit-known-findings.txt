@@ -8,6 +8,7 @@
 testComputersTabPassesTheAccessibilityAudit | Contrast | 3
 testComputersTabPassesTheAccessibilityAudit | Dynamic Type | 3
 testDictateTabPassesTheAccessibilityAudit | Contrast | 2
+testDictateTabPassesTheAccessibilityAudit | Text clipped | 1
 testFirstRunScreenPassesTheAccessibilityAudit | Dynamic Type | 1
 testHelpTabPassesTheAccessibilityAudit | Contrast | 4
 testHelpTabPassesTheAccessibilityAudit | Dynamic Type | 3

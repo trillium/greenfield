@@ -138,12 +138,12 @@ struct ModelStatusLine: View {
     var body: some View {
         VStack(spacing: 4) {
             Label(text, systemImage: icon).font(.footnote.weight(.medium))
-                .foregroundStyle(differentiateWithoutColor ? Color.secondary : color)
+                .foregroundStyle(differentiateWithoutColor ? KitTokens.Text.secondary : color)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if case .downloading(let fraction) = state { ProgressView(value: fraction) }
             if case .downloading = state {
                 Text("One time only: about 0.5 GB, kept on this phone. App updates keep it.")
-                    .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+                    .font(.caption).foregroundStyle(KitTokens.Text.secondary).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .accessibilityElement(children: .combine)
@@ -243,7 +243,7 @@ struct TextBox: View {
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
                 .overlay(alignment: .topLeading) {
                     if flow.text.isEmpty {
-                        Text("Dictated text appears here").foregroundStyle(KitTokens.Text.placeholder).padding(14)
+                        Text("Dictated text appears here").foregroundStyle(KitTokens.Text.secondary).padding(14)
                             .allowsHitTesting(false)
                     }
                 }
