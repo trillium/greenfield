@@ -124,9 +124,14 @@ struct RetryNote: View {
 struct ModelStatusLine: View {
     let state: DictationSession.ModelState
 
+    /// Honour Differentiate Without Colour: the text Label already says "ready" / "failed", so when the user has
+    /// colour-blindness cues on in Settings we drop the redundant red/green tint and rely on the spoken state alone.
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+
     var body: some View {
         VStack(spacing: 4) {
-            Label(text, systemImage: icon).font(.footnote.weight(.medium)).foregroundStyle(color)
+            Label(text, systemImage: icon).font(.footnote.weight(.medium))
+                .foregroundStyle(differentiateWithoutColor ? Color.secondary : color)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if case .downloading(let fraction) = state { ProgressView(value: fraction) }
             if case .downloading = state {
@@ -245,6 +250,8 @@ struct DictationButton: View {
 
     /// The mic glyph is text, so it grows with Dynamic Type. It is capped so it still fits the fixed button it sits in.
     @ScaledMetric(relativeTo: .largeTitle) private var glyphSize: CGFloat = 54
+    /// Honour Reduce Motion: the tap-to-start pulse is suppressed when the user has animations off in Settings.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: tap) {
@@ -258,13 +265,14 @@ struct DictationButton: View {
             }
             .frame(width: 180, height: 180)
             .scaleEffect(active ? 1.06 : 1)
-            .animation(.spring(duration: 0.2), value: active)
+            .animation(reduceMotion ? nil : .spring(duration: 0.2), value: active)
         }
         .buttonStyle(.plain)
         .disabled(!enabled && !active)
         .sensoryFeedback(.impact, trigger: active)
         .accessibilityLabel(active ? "Stop dictation" : "Start dictation")
         .accessibilityHint("Tap to \(active ? "stop and write the text into the box" : "start recording")")
+        .accessibilityValue(active ? "Dictating" : "Idle")
     }
 }
 
