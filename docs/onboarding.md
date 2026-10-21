@@ -181,8 +181,40 @@ That builds, signs, installs, restarts and checks that the running program is th
 new one does not come up, it puts the old one back and tells you). Already have a signed build you want to
 use? `greenfield-inserter update --from FILE`. Then tap *Check* again on the phone.
 
+**Several Macs, one certificate.** The signing certificate's private key may live on only one Mac, and
+`codesign` cannot use it over ssh (the keychain is locked there). Build once, sign on the Mac that has the
+certificate from a program running in its desktop session, check the result, and install that same file on
+every Mac:
+
+```
+codesign --force --sign "Apple Development: Name (ID)" --identifier greenfield-inserter FILE   # desktop session
+codesign -dvv FILE 2>&1 | grep TeamIdentifier                                               # your team id
+greenfield-inserter update --from FILE      # on each Mac, from its desktop session; keeps config and keys
+greenfield-inserter macs health             # Accessibility granted, Version matches, App compatible
+```
+
+The same certificate means macOS keeps the Accessibility approval, so no Mac needs a click. Run the update
+one Mac at a time, and never delete `~/.config/greenfield-inserter` (it holds the settings and the key).
+
+**After an update, run `greenfield-inserter selftest` once on each Mac.** A restarted daemon has seen no
+delivery yet, so *Can actually insert text* is a FAIL line in `health` until the selftest (or a real text)
+has arrived. The selftest needs the screen unlocked: on a locked screen it stops at *Screen not locked* and
+says to unlock the Mac. Unlock, run it, and the Health line turns green.
+
 **"Update the app"** - this app is too old for the daemon. Install the newest Greenfield on the phone (or build
-it from the checkout), then tap *Check* again.
+it from the checkout), then tap *Check* again. To update the copy already on the phone without losing its
+data, build it signed for the phone and install over it, never uninstall first:
+
+```
+make core && scripts/version.sh --write && make generate        # once per checkout; Config/Local.xcconfig sets DEVELOPMENT_TEAM
+xcodebuild -project DictationApp.xcodeproj -scheme DictationApp -destination 'id=<phone udid>' \
+  -derivedDataPath build/DerivedData -allowProvisioningUpdates build                            # desktop session (signing)
+xcrun devicectl device install app --device <phone> build/DerivedData/Build/Products/Debug-iphoneos/DictationApp.app
+```
+
+Installing does not launch the app, so the phone can stay locked. Opening it (to see Health, or
+`make logs TARGET=phone`) needs the phone unlocked once. `make logs` writes under `~/Library/Logs`; it refuses
+a folder inside a git repository.
 
 ### 3. The phone cannot find the Mac
 
