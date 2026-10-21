@@ -10,7 +10,7 @@ BUILD_DIR="${BUILD_DIR:-$ROOT/build}"
 # environment variable of the same name (so `make archive DEVELOPMENT_TEAM=ABCDE12345` works).
 cfg() {
   local key="$1" val="" f line
-  for f in "$CONFIG_DIR/Base.xcconfig" "$CONFIG_DIR/Version.xcconfig" "$CONFIG_DIR/Local.xcconfig"; do
+  for f in "$CONFIG_DIR/Base.xcconfig" "$CONFIG_DIR/Version.xcconfig" "$CONFIG_DIR/Kit.xcconfig" "$CONFIG_DIR/Local.xcconfig"; do
     [ -f "$f" ] || continue
     line="$(grep -E "^[[:space:]]*${key}[[:space:]]*=" "$f" | tail -1 || true)"
     [ -n "$line" ] && val="$(printf '%s' "$line" | sed -E 's/^[^=]*=[[:space:]]*//; s/[[:space:]]*(\/\/.*)?$//')"
@@ -38,6 +38,7 @@ generate_project() {
   "$ROOT/scripts/version.sh" --write  # stamp every build from git tags; no hand edits
   PARROT_KIT_DIR="$("$ROOT/scripts/kit-dir.sh")"  # the shared ParrotKit package, a local checkout
   export PARROT_KIT_DIR
+  "$ROOT/scripts/kit-version.sh" --write "$PARROT_KIT_DIR"  # the kit version the app declares it is built against; follows the checkout
   (cd "$ROOT" && xcodegen generate --quiet)
 }
 

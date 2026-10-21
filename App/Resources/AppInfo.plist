@@ -23,6 +23,8 @@
 			</array>
 		</dict>
 	</array>
+	<key>GreenfieldKitRequired</key>
+	<string>$(GREENFIELD_KIT_REQUIRED)</string>
 	<key>GreenfieldMinPeerVersion</key>
 	<string>$(GREENFIELD_MIN_PEER_VERSION)</string>
 	<key>NSCameraUsageDescription</key>

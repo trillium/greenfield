@@ -30,3 +30,7 @@ The source of truth is the git tag `vX.Y.Z`. `scripts/version.sh` takes the newe
 4. `make archive` (signed). Uploading to TestFlight is a separate, manual decision; no script does it.
 
 The app shows its version on the About screen.
+
+## The kit version the app declares
+
+The app is built against a kit of the same MINOR (while MAJOR is 0). The kit version it declares (`GreenfieldKitRequired` in Info.plist) is not typed in anywhere: `make generate` reads it from the kit checkout (`scripts/kit-version.sh`, which reads `ParrotKitInfo.version`) into the gitignored `Config/Kit.xcconfig`. A kit bump therefore needs no edit here; `KitCompatibilityTests` fails if the linked kit does not satisfy what was declared (a stale build of an older kit), and `make test-kit-version` tests the script.

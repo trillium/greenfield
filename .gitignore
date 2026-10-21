@@ -23,6 +23,8 @@ xcuserdata/
 Config/Local.xcconfig
 # Generated from git tags by scripts/version.sh
 Config/Version.xcconfig
+# Generated from the kit checkout by scripts/kit-version.sh
+Config/Kit.xcconfig
 .claude/settings.local.json
 
 # Speech models and audio are never committed: weights are downloaded at runtime (docs/attribution.md)

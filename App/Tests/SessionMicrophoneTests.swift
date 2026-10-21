@@ -82,9 +82,25 @@ final class SessionMicrophoneTests: XCTestCase {
 }
 
 /// The app is built against a kit of the same MINOR (while MAJOR is 0), and its own checks keep the shared frameworks' promises.
+/// The kit version the app declares is not typed in: `make generate` reads it from the kit checkout (scripts/kit-version.sh) into
+/// Info.plist, so a kit bump needs no edit here and a stale build of an older kit is what this catches.
 final class KitCompatibilityTests: XCTestCase {
-    func testTheAppIsBuiltAgainstACompatibleKit() {
-        XCTAssertTrue(ParrotKitInfo.isCompatible(required: "0.4.0"), "kit \(ParrotKitInfo.version): the MINOR must match")
+    private var declared: String? { Bundle.main.object(forInfoDictionaryKey: "GreenfieldKitRequired") as? String }
+
+    func testTheAppIsBuiltAgainstACompatibleKit() throws {
+        let required = try XCTUnwrap(declared, "Info.plist has no GreenfieldKitRequired; run make generate")
+        XCTAssertFalse(required.isEmpty, "GreenfieldKitRequired is empty; run make generate")
+        XCTAssertTrue(ParrotKitInfo.isCompatible(required: required), "kit \(ParrotKitInfo.version): the MINOR must match \(required)")
+    }
+
+    func testTheDeclaredKitFollowsTheKitThatIsLinked() throws {
+        XCTAssertEqual(declared, ParrotKitInfo.version, "the declared kit version comes from the kit checkout, not from a literal here")
+    }
+
+    func testTheRuleStillRefusesAKitOfAnotherLine() {
+        XCTAssertFalse(ParrotKitInfo.isCompatible(required: "0.99.0", provided: "0.5.0"))
+        XCTAssertFalse(ParrotKitInfo.isCompatible(required: "0.4.0", provided: "0.5.0"))
+        XCTAssertTrue(ParrotKitInfo.isCompatible(required: "0.5.0", provided: "0.5.3"))
     }
 
     func testTheChecklistKeepsTheOnboardingPromises() {

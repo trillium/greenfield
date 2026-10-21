@@ -13,6 +13,11 @@ MARKETING_VERSION = 0.0.0
 CURRENT_PROJECT_VERSION = 1
 #include? "Version.xcconfig"
 
+// The kit version this app is built against: `make generate` writes Config/Kit.xcconfig (gitignored) from the kit checkout's own
+// version (scripts/kit-version.sh), so a kit bump needs no edit here. KitCompatibilityTests checks the linked kit still satisfies it.
+GREENFIELD_KIT_REQUIRED =
+#include? "Kit.xcconfig"
+
 // The oldest Mac agent version this app works with (part of the compatibility contract, docs/mac-contract.md). Raise it, never
 // the app's own version: that comes from the git tag.
 GREENFIELD_MIN_PEER_VERSION = 0.2.0
