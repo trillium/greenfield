@@ -101,6 +101,7 @@ struct ModelPackList: View {
     let model: AppModel
     @Binding var message: String?
     @State private var refresh = 0
+    @State private var removingID: String?
 
     var body: some View {
         let store = model.flow.models
@@ -114,10 +115,20 @@ struct ModelPackList: View {
                 Button { choose(entry.id) } label: {
                     Label(entry.name, systemImage: active == entry.id ? "checkmark.circle.fill" : "circle")
                 }
-                .swipeActions { Button("Remove", role: .destructive) { remove(entry.id) } }
+                .swipeActions { Button("Remove", role: .destructive) { removingID = entry.id } }
             }
         }
         .id(refresh)
+        .confirmationDialog("Remove this model pack?", isPresented: removing, titleVisibility: .visible) {
+            Button("Remove", role: .destructive) { if let id = removingID { remove(id) } }
+            Button("Keep it", role: .cancel) { }
+        } message: {
+            Text("The pack is taken off this phone. You can install it again later.")
+        }
+    }
+
+    private var removing: Binding<Bool> {
+        Binding(get: { removingID != nil }, set: { if !$0 { removingID = nil } })
     }
 
     private func choose(_ id: String?) {
@@ -135,6 +146,7 @@ struct ModelPackList: View {
 struct PhraseList: View {
     let flow: FlowController
     @State private var phrases: [PhraseStore.Phrase] = []
+    @State private var confirmReset = false
 
     var body: some View {
         Group {
@@ -146,9 +158,15 @@ struct PhraseList: View {
             }
             .onDelete { phrases.remove(atOffsets: $0) }
             Button("Add a phrase", systemImage: "plus") { phrases.append(PhraseStore.Phrase(text: "")) }
-            Button("Reset to defaults", systemImage: "arrow.counterclockwise", role: .destructive) { phrases = PhraseStore.defaults }
+            Button("Reset to defaults", systemImage: "arrow.counterclockwise", role: .destructive) { confirmReset = true }
         }
         .onAppear { phrases = flow.phrases }
         .onChange(of: phrases) { _, new in flow.setPhrases(new) }
+        .confirmationDialog("Reset the line-enders to their defaults?", isPresented: $confirmReset, titleVisibility: .visible) {
+            Button("Reset to defaults", role: .destructive) { phrases = PhraseStore.defaults }
+            Button("Keep my phrases", role: .cancel) { }
+        } message: {
+            Text("This replaces the \(phrases.count) phrases listed here with the factory defaults. It cannot be undone.")
+        }
     }
 }

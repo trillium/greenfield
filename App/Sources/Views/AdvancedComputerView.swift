@@ -50,6 +50,7 @@ struct AdvancedComputerEditView: View {
     @State private var key = ""
     @State private var testResult: String?
     @State private var failure: String?
+    @State private var confirmRemoveKey = false
 
     private var draft: MacTarget { MacTarget(id: target?.id ?? UUID(), name: name, address: address) }
 
@@ -70,7 +71,7 @@ struct AdvancedComputerEditView: View {
                     SecureField(target == nil ? "Key (only if it asks for one)" : "Key (empty keeps the saved one)", text: $key)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                     if let target, model.targets.key(for: target) != nil {
-                        Button("Remove the saved key", role: .destructive) { removeKey(target) }
+                        Button("Remove the saved key", role: .destructive) { confirmRemoveKey = true }
                     }
                     Text("Computers on your tailnet are trusted by tailnet identity, so no key is needed. Add one only if this "
                          + "computer's agent asks for it. It is kept in the iPhone Keychain, on this phone only.")
@@ -90,6 +91,12 @@ struct AdvancedComputerEditView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(!draft.isValid) }
+            }
+            .confirmationDialog("Remove the saved key?", isPresented: $confirmRemoveKey, titleVisibility: .visible) {
+                Button("Remove the key", role: .destructive) { if let target { removeKey(target) } }
+                Button("Keep the key", role: .cancel) { }
+            } message: {
+                Text("Text can no longer be sent to this computer until its agent asks for a key again.")
             }
             .onAppear {
                 guard let target else { return }

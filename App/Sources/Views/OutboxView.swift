@@ -4,6 +4,7 @@ import SwiftUI
 /// Every transcript and what became of it, with Resend and Copy.
 struct OutboxView: View {
     let model: AppModel
+    @State private var confirmClearSent = false
 
     var body: some View {
         NavigationStack {
@@ -24,12 +25,18 @@ struct OutboxView: View {
                 }
             }
             .navigationTitle("Outbox")
+            .confirmationDialog("Clear the sent items?", isPresented: $confirmClearSent, titleVisibility: .visible) {
+                Button("Clear sent", role: .destructive) { model.outbox.clearSent() }
+                Button("Keep them", role: .cancel) { }
+            } message: {
+                Text("Text already sent to a computer is taken off this phone. Anything still waiting stays.")
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button("Retry all unsent", systemImage: "arrow.clockwise") { Task { await model.delivery.resendAll() } }
                             .disabled(model.outbox.pending.isEmpty)
-                        Button("Clear sent", systemImage: "trash", role: .destructive) { model.outbox.clearSent() }
+                        Button("Clear sent", systemImage: "trash", role: .destructive) { confirmClearSent = true }
                     } label: { Label("More", systemImage: "ellipsis.circle") }
                 }
             }
@@ -40,6 +47,7 @@ struct OutboxView: View {
 struct OutboxRow: View {
     let item: OutboxItem
     let model: AppModel
+    @State private var confirmDelete = false
 
     /// The computer this text went to, or will go to: the one it was last sent to, else the active one.
     private var destination: String { item.targetName ?? model.targets.selected?.name ?? "no computer chosen" }
@@ -58,7 +66,7 @@ struct OutboxRow: View {
         }
         .padding(.vertical, 2)
         .swipeActions(edge: .trailing) {
-            Button("Delete", systemImage: "trash", role: .destructive) { model.outbox.remove(item.id) }
+            Button("Delete", systemImage: "trash", role: .destructive) { confirmDelete = true }
         }
         .contextMenu {
             Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = item.text }
@@ -68,6 +76,12 @@ struct OutboxRow: View {
         .accessibilityActions {
             Button("Copy") { UIPasteboard.general.string = item.text }
             if item.status == .pending { Button("Retry") { model.resend(item.id) } }
+        }
+        .confirmationDialog("Delete this transcript?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { model.outbox.remove(item.id) }
+            Button("Keep it", role: .cancel) { }
+        } message: {
+            Text("It is taken off this phone. This cannot be undone.")
         }
     }
 }

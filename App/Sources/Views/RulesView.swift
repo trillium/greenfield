@@ -5,6 +5,7 @@ import SwiftUI
 struct RulesView: View {
     let flow: FlowController
     @State private var rules: [SoundRule] = []
+    @State private var confirmReset = false
 
     var body: some View {
         List {
@@ -25,7 +26,7 @@ struct RulesView: View {
                     rules.append(SoundRule(trigger: SoundTrigger(sound: flow.availableSounds.first ?? "tongue-click"), from: .idle,
                                            to: .dictating, action: .startDictation))
                 }
-                Button("Reset to defaults", systemImage: "arrow.counterclockwise", role: .destructive) { rules = SoundRule.defaults }
+                Button("Reset to defaults", systemImage: "arrow.counterclockwise", role: .destructive) { confirmReset = true }
             } footer: {
                 Text("A rule fires when its sound is heard (the given number of times within the window) while the flow is in its "
                      + "from-state. Rules are checked top to bottom. Don't give two rules the same sound and state.")
@@ -33,6 +34,12 @@ struct RulesView: View {
         }
         .navigationTitle("Rules")
         .toolbar { EditButton() }
+        .confirmationDialog("Reset every rule to its default?", isPresented: $confirmReset, titleVisibility: .visible) {
+            Button("Reset to defaults", role: .destructive) { rules = SoundRule.defaults }
+            Button("Keep my rules", role: .cancel) { }
+        } message: {
+            Text("This replaces the \(rules.count) rules listed here with the factory defaults. It cannot be undone.")
+        }
         .onAppear { rules = flow.rules }
         .onChange(of: rules) { _, new in flow.setRules(new) }
     }

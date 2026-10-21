@@ -4,6 +4,7 @@ import SwiftUI
 /// The Macs this phone can send to. They are found, never typed: Bonjour, the tailnet and the QR code a Mac shows.
 struct TargetsView: View {
     let model: AppModel
+    @State private var deleting: MacTarget?
 
     var body: some View {
         NavigationStack {
@@ -15,7 +16,7 @@ struct TargetsView: View {
                 ForEach(model.targets.targets) { target in
                     TargetRow(target: target, model: model)
                         .swipeActions(edge: .trailing) {
-                            Button("Delete", systemImage: "trash", role: .destructive) { model.targets.remove(target.id) }
+                            Button("Delete", systemImage: "trash", role: .destructive) { deleting = target }
                         }
                 }
                 if !model.peers.discovered.isEmpty {
@@ -49,6 +50,13 @@ struct TargetsView: View {
                 }
             }
             .navigationTitle("Computers")
+            .confirmationDialog("Delete this computer?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                                titleVisibility: .visible, presenting: deleting) { target in
+                Button("Delete \(target.name)", role: .destructive) { model.targets.remove(target.id) }
+                Button("Keep it", role: .cancel) { }
+            } message: { _ in
+                Text("It is taken off this phone and text already sent to it stays there.")
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Check", systemImage: "arrow.clockwise") {
