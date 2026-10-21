@@ -1,0 +1,23 @@
+// Single source of truth for per-app identity and version. Scripts and Xcode both read this file.
+// The display name (Greenfield) is a working name and the bundle id is a placeholder; neither is final. Each is a one-line change.
+// Override locally (never committed) in Config/Local.xcconfig -- see Local.xcconfig.example.
+// Set DEVELOPMENT_TEAM in Config/Local.xcconfig (gitignored). Keys live outside git (docs/signing.md).
+
+APP_NAME = DictationApp
+DISPLAY_NAME = Greenfield
+PRODUCT_BUNDLE_IDENTIFIER = com.trillium.dictationapp.dev
+
+// Version is derived from git tags, never hand-edited (docs/versioning.md). These are only fallbacks for a
+// checkout with no git history; `make generate` writes Config/Version.xcconfig (gitignored), which overrides them.
+MARKETING_VERSION = 0.0.0
+CURRENT_PROJECT_VERSION = 1
+#include? "Version.xcconfig"
+
+// The oldest Mac agent version this app works with (part of the compatibility contract, docs/mac-contract.md). Raise it, never
+// the app's own version: that comes from the git tag.
+GREENFIELD_MIN_PEER_VERSION = 0.2.0
+
+// Computers the app starts with, "name=tailnet-address name=tailnet-address" (no keys). Set it in the gitignored Local.xcconfig.
+GREENFIELD_PRESET_COMPUTERS =
+
+#include? "Local.xcconfig"

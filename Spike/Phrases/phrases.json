@@ -1,0 +1,20 @@
+{
+  "phrases": [
+    { "id": "p01", "text": "Hello world." },
+    { "id": "p02", "text": "Send the report to Dana by Friday." },
+    { "id": "p03", "text": "Thanks, that is exactly what I needed." },
+    { "id": "p04", "text": "Open the terminal and run the tests again." },
+    { "id": "p05", "text": "Please remind me to call the dentist tomorrow morning at nine thirty." },
+    { "id": "p06", "text": "Could you check whether the deployment finished successfully?" },
+    { "id": "p07", "text": "It costs twenty three dollars and forty five cents." },
+    { "id": "p08", "text": "Schedule lunch with Priya and Marcus next Tuesday at noon." },
+    { "id": "p09", "text": "I think we should move the meeting to Thursday afternoon, if that works for everyone." },
+    { "id": "p10", "text": "The new build fixes the crash that happened when you rotated the screen." },
+    { "id": "p11", "text": "The quick brown fox jumps over the lazy dog." },
+    { "id": "p12", "text": "Let's keep this simple: one button, one microphone, and the text goes where the cursor is." }
+  ],
+  "long": {
+    "id": "long",
+    "text": "Here is a longer piece of dictation, the kind of thing you might say into a phone while walking to a meeting. First, I want to summarize where the project stands. The audio capture is working and the speech model loads in a couple of seconds on the first launch. After that, every utterance is transcribed on the device, so nothing about my voice ever leaves the phone. Second, the text has to reach the right computer. I have two laptops and a desktop on the same private network, and I want to pick one before I speak and have the words appear exactly where the cursor is. If the network is down, the text should wait in an outbox, and I should be able to send it again with one tap. Third, I would like the whole thing to feel instant, which means holding the button, speaking naturally, and seeing the sentence appear a moment after I let go. There are a few risks. Models can use a lot of memory, long recordings may need to be split into chunks, and background noise might confuse the end of speech detection. We will measure all of that on the real phone before we decide anything else."
+  }
+}

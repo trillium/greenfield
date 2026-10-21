@@ -1,0 +1,15 @@
+{
+  "_comment": "What the phone sends for POST /text. The Mac side's contract test parses this; the phone's own test checks the real client still produces exactly these fields. Values in angle brackets vary.",
+  "method": "POST",
+  "path": "/text",
+  "headers": {
+    "Content-Type": "application/json",
+    "X-Greenfield-App": "<semver of the app, from its git tag>",
+    "X-Dictation-Key": "<only when a key is saved under Advanced>"
+  },
+  "body": {
+    "id": "<uuid, reused on every resend>",
+    "text": "<the submitted text>",
+    "source": "greenfield"
+  }
+}

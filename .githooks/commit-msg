@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+# Canon commit-msg: reject default merge messages.
+if head -1 "$1" | grep -qE '^Merge (branch|remote-tracking branch|pull request)'; then
+  echo "error: use a semantic message (type(scope): description), not a default merge message"; exit 1
+fi
