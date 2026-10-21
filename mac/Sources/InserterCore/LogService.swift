@@ -129,7 +129,7 @@ public enum LogPage {
     public static let maxBytes = 256 * 1024
 
     public static func build(lines: [String], query: LogQuery, redactor: LogRedactor = LogRedactor(), maxBytes: Int = LogPage.maxBytes) -> (lines: [String], bytes: Int, truncated: Bool) {
-        var safe = redactor.redact(lines: lines)
+        var safe = redactor.redact(lines: lines.map(AssistLogMask.mask))
         var bytes = safe.reduce(0) { $0 + $1.utf8.count + 1 }
         var truncated = lines.count >= query.tail
         while bytes > maxBytes, !safe.isEmpty {

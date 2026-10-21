@@ -23,6 +23,11 @@ usage:
                                               this Mac's daemon log, redacted (no text, no keys); works with the daemon stopped
   greenfield-inserter macs logs ALIAS [--tail N] [--since 30m]
                                               that Mac's daemon log over the tailnet (GET /logs), redacted
+  greenfield-inserter assist [status]         the assist tools (window switcher, trackpad) for the phone: what is on
+  greenfield-inserter assist on | off         the master switch; OFF by default, and `off` closes every pointer session at once
+  greenfield-inserter assist windows|focus|pointer|titles on|off
+                                              one tool or setting at a time (pointer is off until turned on here)
+  greenfield-inserter assist check-windows    the live check: opens two throwaway windows of its own, lists, focuses, closes them
   greenfield-inserter selftest [--port N]
                                               open a test window, send a test string and a Return through this Mac's
                                               own daemon, read them back; prints PASS or FAIL with the fix
@@ -97,13 +102,25 @@ case "serve":
         },
         myName: { nameOverride ?? macName.current() }, myVersion: BuildInfo.version)
     var server: HTTPServer!
+    // The assist tools. Everything is off until `greenfield-inserter assist on`; the settings file is read on every request.
+    let assistSettings = FileAssistSettings(paths: paths)
+    let systemProbe = MacSystemProbe()
+    let windowService = WindowService(provider: MacWindowProvider(), probe: systemProbe, settings: assistSettings,
+                                      computerName: { nameOverride ?? macName.current() })
+    let datagramAddress: () -> String? = { if case .address(let a) = target { return a }; return Tailnet.ipv4() }
+    let transport = UDPPointerTransport(address: datagramAddress, port: port, logger: logger)
+    let pointer = PointerService(settings: assistSettings, probe: systemProbe, sink: CGEventPointerSink(), listener: transport, logger: logger)
+    transport.service = pointer
+    let assist = AssistEndpoints(settings: assistSettings, windows: windowService, pointer: pointer, endpoint: { transport.endpoint }, logger: logger)
     let handler = RequestHandler(keys: keys, probe: MacSystemProbe(), inserter: MacInserter(),
                                  name: { nameOverride ?? macName.current() }, listening: { server.listening() },
-                                 identity: tailscale, record: DeliveryLedger(paths: paths), clients: ClientLedger(paths: paths), discovery: discovery, logger: logger,
+                                 identity: tailscale, record: DeliveryLedger(paths: paths), clients: ClientLedger(paths: paths), discovery: discovery, assist: assist, logger: logger,
                                  logSource: FileLogSource(file: paths.logFile))
     logger.log("starting \(RequestHandler.serviceName) \(RequestHandler.version) name=\(nameOverride ?? macName.current())")
     logger.log("who may call: loopback, same tailnet user\(keys.isConfigured ? ", or the optional key" : "") (no key needed)")
     if !MacSystemProbe().accessibilityTrusted { logger.log("Accessibility not granted; run `greenfield-inserter permissions`") }
+    let startSettings = assistSettings.current()
+    logger.log("assist tools: \(startSettings.enabled ? "ON" : "off") windows=\(startSettings.windowsAvailable) pointer=\(startSettings.pointerAvailable) (greenfield-inserter assist status)")
     if !args.contains("--no-bonjour") {
         // the service record carries the tailnet name, because the daemon is not reachable on the LAN itself
         let ownAddress = tailscale.statusData().flatMap(TailnetStatus.parse)?.me.dnsName ?? Tailnet.ipv4() ?? "unknown"
@@ -150,6 +167,42 @@ case "logs":
         let page = LogPage.build(lines: source.read(query, now: Date()), query: query)
         page.lines.forEach { print($0) }
         if page.truncated { FileHandle.standardError.write(Data("(showing the newest \(page.lines.count) lines; --tail N asks for more, up to \(LogQuery.maxTail))\n".utf8)) }
+    }
+
+case "assist":
+    let settingsFile = FileAssistSettings(paths: paths)
+    func describe(_ s: AssistSettings) -> String {
+        func word(_ on: Bool) -> String { on ? "on " : "off" }
+        return """
+        assist tools: \(s.enabled ? "ON" : "OFF") (the master switch; default off)
+          window switcher   list: \(word(s.windowsAvailable))  focus: \(word(s.windowsAvailable && s.focus))  titles leave this Mac: \(word(s.titles))
+          trackpad (pointer) \(word(s.pointerAvailable))   (own switch, off until `assist pointer on`; live pointer injection has not been approved yet)
+        settings file: \(paths.assistFile.path)
+        """
+    }
+    func change(_ edit: (inout AssistSettings) -> Void) -> AssistSettings {
+        do { return try settingsFile.update(edit) } catch { fail("could not save \(paths.assistFile.path): \(error)") }
+    }
+    let rest = Array(args.dropFirst())
+    switch rest.first ?? "status" {
+    case "status": print(describe(settingsFile.current()))
+    case "on": print(describe(change { $0.enabled = true }))
+    case "off":
+        print(describe(change { $0.enabled = false }))
+        print("The running daemon follows within a second: pointer sessions are closed and the assist routes answer 404.")
+    case "windows", "focus", "pointer", "titles":
+        guard rest.count == 2, rest[1] == "on" || rest[1] == "off" else { fail("usage: assist \(rest[0]) on|off", code: 2) }
+        let on = rest[1] == "on"
+        print(describe(change {
+            switch rest[0] {
+            case "windows": $0.windows = on
+            case "focus": $0.focus = on
+            case "pointer": $0.pointer = on
+            default: $0.titles = on
+            }
+        }))
+    case "check-windows": exit(LiveWindowCheck().run())
+    default: fail(usage, code: 2)
     }
 
 case "name":

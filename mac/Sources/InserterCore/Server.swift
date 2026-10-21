@@ -70,7 +70,10 @@ public final class HTTPServer {
             thread { self.runListener(fixed: "127.0.0.1") }
             thread { self.runListener(fixed: nil) }
         }
-        while true { sleep(3600) }
+        // The main thread serves its run loop: NSWorkspace (the window switcher's list of running applications) is kept current from it.
+        let keepAlive = Timer(timeInterval: 3600, repeats: true) { _ in }
+        RunLoop.main.add(keepAlive, forMode: .common)
+        while true { RunLoop.main.run(mode: .default, before: .distantFuture) }
     }
 
     private func thread(_ body: @escaping () -> Void) {

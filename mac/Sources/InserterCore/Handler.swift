@@ -42,7 +42,7 @@ public final class RequestHandler {
     public static var version: String { BuildInfo.version }
     public static let maxTextBytes = 256 * 1024
     /// The paths this daemon answers; anything else is logged as "(unknown)".
-    static let routes: Set<String> = ["/health", "/status", "/text", "/peers", "/logs"]
+    static let routes: Set<String> = Set(["/health", "/status", "/text", "/peers", "/logs"]).union(AssistEndpoints.paths.keys)
 
     private let keys: KeyVerifier
     private let probe: SystemProbe
@@ -54,6 +54,7 @@ public final class RequestHandler {
     private let record: DeliveryRecord?
     private let clients: ClientRecord?
     private let discovery: ComputerDiscovery?
+    private let assist: AssistEndpoints?
     private let version: String
     private let minClientVersion: String
     private var build: BuildIdentity { RunningBuild.identity }
@@ -68,7 +69,7 @@ public final class RequestHandler {
     public init(keys: KeyVerifier, probe: SystemProbe, inserter: TextInserter, dedupe: DedupeCache = DedupeCache(),
                 name: @escaping () -> String, listening: @escaping () -> [String] = { [] },
                 identity: TailnetIdentity? = nil, record: DeliveryRecord? = nil, clients: ClientRecord? = nil, discovery: ComputerDiscovery? = nil,
-                version: String = BuildInfo.version, minClientVersion: String = BuildInfo.minClientVersion,
+                assist: AssistEndpoints? = nil, version: String = BuildInfo.version, minClientVersion: String = BuildInfo.minClientVersion,
                 logger: RequestLogger? = nil, logSource: LogSource? = nil, logLimiter: LogRateLimiter = LogRateLimiter(),
                 now: @escaping () -> Date = Date.init) {
         self.keys = keys
@@ -81,6 +82,7 @@ public final class RequestHandler {
         self.record = record
         self.clients = clients
         self.discovery = discovery
+        self.assist = assist
         self.version = version
         self.minClientVersion = minClientVersion
         self.logger = logger
@@ -100,7 +102,7 @@ public final class RequestHandler {
 
     private func route(_ request: HTTPRequest) -> HTTPResponse {
         if request.path == "/health" { return health(request) }
-        let known = ["/status": "GET", "/text": "POST", "/peers": "GET", "/logs": "GET"]
+        let known = ["/status": "GET", "/text": "POST", "/peers": "GET", "/logs": "GET"].merging(AssistEndpoints.paths) { first, _ in first }
         guard let wanted = known[request.path] else {
             return .error(404, "not_found", "unknown path")
         }
@@ -109,7 +111,12 @@ public final class RequestHandler {
         if let denied = denied { return denied }
         // Logs are for a person debugging, so a Mac with a wrong or old app still answers them: no app-version gate here.
         if request.path == "/logs" { return logs(request, via: via) }
+        // The assist tools act on this Mac, so they are for this Mac's own tailnet user (or this Mac), never for the optional key.
+        if AssistEndpoints.handles(request.path), via == .key {
+            return .error(403, "assist_need_same_user", "the assist tools are only for this Mac and devices of its tailnet user")
+        }
         if let refused = checkAppVersion(request) { return refused }
+        if AssistEndpoints.handles(request.path) { return assist?.handle(request) ?? AssistEndpoints.notBuilt }
         guard request.method == wanted else {
             var r = HTTPResponse.error(405, "method_not_allowed", "use \(wanted)")
             r.headers["Allow"] = wanted
@@ -277,6 +284,7 @@ public final class RequestHandler {
             "key_configured": keys.verify(nil) != .notConfigured,
             "tailnet_user": identity?.selfLogin() ?? NSNull(),
             "identity_ok": identity?.selfLogin() != nil,
+            "assist": assist?.statusJSON() ?? AssistEndpoints.offStatusJSON,
             "logs_available": logSource?.available ?? false,
             "logs": ["route": "/logs", "max_lines": LogQuery.maxTail, "max_bytes": LogPage.maxBytes],
         ].merging(deliveryFields()) { _, new in new }

@@ -8,6 +8,14 @@
     "message" : "the newest app seen (0.2.0, 2 minutes ago) is compatible with daemon 0.2.0",
     "ok" : true
   },
+  "assist" : {
+    "capabilities" : [
+
+    ],
+    "enabled" : false,
+    "pointer" : false,
+    "windows" : false
+  },
   "auth" : "tailnet",
   "build" : {
     "binary_sha" : "0123456789abcdef",
