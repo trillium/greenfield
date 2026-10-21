@@ -40,7 +40,7 @@ while [ $# -gt 0 ]; do
         --no-selftest) setup_args+=(--no-selftest); shift ;;
         --no-bonjour) extra_serve="$extra_serve --no-bonjour"; shift ;;
         --no-setup) run_setup=0; shift ;;
-        -h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,19p' "$here/install.sh" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
     esac
 done
