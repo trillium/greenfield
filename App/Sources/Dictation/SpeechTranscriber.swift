@@ -55,7 +55,7 @@ actor ParakeetTranscriber: SpeechTranscriber {
     func transcribe(_ samples: [Float]) async throws -> String {
         guard let manager else { throw Failure.notPrepared }
         var state = TdtDecoderState.make(decoderLayers: await manager.decoderLayerCount)
-        return try await manager.transcribe(samples, decoderState: &state).text
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let heard = try await manager.transcribe(samples, decoderState: &state).text
+        return DictationText.trimmingEdges(DictationText.normalizingNewlines(heard))
     }
 }

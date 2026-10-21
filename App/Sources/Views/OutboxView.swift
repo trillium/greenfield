@@ -52,7 +52,7 @@ struct OutboxRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(item.text).textSelection(.enabled)
+            Text(DictationText.displayed(item.text)).textSelection(.enabled).accessibilityLabel(DictationText.spoken(item.text))
             Label(item.status == .sent ? "Sent to \(destination)" : "For \(destination)", systemImage: "desktopcomputer")
                 .font(.footnote).foregroundStyle(.secondary)
             WaitingReason(item: item, sending: model.delivery.inFlight.contains(item.id))

@@ -1,0 +1,14 @@
+{
+  "_comment": "What the phone sends for POST /text when the box has several lines: line breaks are line feeds inside the JSON string, empty lines and a trailing newline are kept, and the return marker the box draws is never in the text. The phone's test checks the real client produces exactly this text; the Mac side's contract test sends it to the daemon.",
+  "method": "POST",
+  "path": "/text",
+  "headers": {
+    "Content-Type": "application/json",
+    "X-Greenfield-App": "<semver of the app, from its git tag>"
+  },
+  "body": {
+    "id": "<uuid, reused on every resend>",
+    "text": "Dear team,\n\nThe build is green.\nThanks\n",
+    "source": "greenfield"
+  }
+}

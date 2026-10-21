@@ -156,3 +156,25 @@ final class NewlineTests: XCTestCase {
         XCTAssertFalse(logger.lines.joined().contains("secret"))
     }
 }
+
+/// The phone's recorded multi-line request (App/Tests/Fixtures/request-text-multiline.json) typed and pasted through the daemon.
+final class RecordedMultiLineRequestTests: XCTestCase {
+    func testTheRecordedRequestArrivesWithItsLineBreaks() throws {
+        let file = ContractTests.appFixtures.appendingPathComponent("request-text-multiline.json")
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: file.path), "no App/Tests/Fixtures here; set APP_FIXTURES to run this")
+        let sample = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+        var body = sample["body"] as! [String: Any]
+        let text = body["text"] as! String
+        XCTAssertTrue(text.contains("\n\n") && text.hasSuffix("\n"), "the sample has an empty line and a trailing newline")
+        for method in ["type", "paste"] {
+            let inserter = FieldInserter()
+            let handler = RequestHandler(keys: StubKeys(), probe: StubProbe(), inserter: inserter, name: { "Test Mac" },
+                                         listening: { [] }, logger: SpyLogger())
+            body["id"] = UUID().uuidString
+            body["method"] = method
+            let request = HTTPRequest(method: "POST", path: "/text", headers: ["X-Dictation-Key": "good"], body: try JSONSerialization.data(withJSONObject: body))
+            XCTAssertEqual(handler.handle(request).status, 200, method)
+            XCTAssertEqual(inserter.field.contents, text, method)
+        }
+    }
+}

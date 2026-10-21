@@ -94,7 +94,7 @@ final class FlowController {
 
     func resetPhrases() { setPhrases(PhraseStore.defaults) }
 
-    var canSubmit: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var canSubmit: Bool { DictationText.isSendable(text) }
 
     /// What the next sound will do, for the screen: the first enabled rule that applies in the current state.
     var hint: String {
@@ -202,12 +202,12 @@ final class FlowController {
 
     private func send() {
         submitPending = false
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let outgoing = DictationText.forSending(text)
         engine.setState(.idle)
-        guard !trimmed.isEmpty else { return }
-        let item = delivery.outbox.add(text: trimmed)
+        guard DictationText.isSendable(outgoing) else { return }
+        let item = delivery.outbox.add(text: outgoing)
         lastSubmittedID = item.id
-        log.add(.send, "submitted \(trimmed.count) characters to \(delivery.targets.selected?.name ?? "no computer")")
+        log.add(.send, "submitted \(outgoing.count) characters to \(delivery.targets.selected?.name ?? "no computer")")
         text = ""
         Task { await delivery.deliver(item.id) }
     }
@@ -223,17 +223,18 @@ final class FlowController {
         }
     }
 
-    private func transcribed(_ words: String, asrMs: Int) {
+    private func transcribed(_ heard: String, asrMs: Int) {
+        let words = DictationText.normalizingNewlines(heard)
         log.add(.dictation, "transcribed \(words.count) characters in \(asrMs) ms")
         let ender = LineEnder.match(words, phrases: enabledPhrases)
         lastHeard = Heard(raw: words, lineEnder: ender?.phrase, time: Date())
         guard let ender else {
-            text = text.isEmpty ? words : text + " " + words
+            text = DictationText.joining(text, words)
             return
         }
         // The phrase ends the line: it is not part of the text, and the box goes to the active computer like a second tongue click.
         log.add(.dictation, "spoken line-ender at the end of the transcript: submitting")
-        if !ender.remaining.isEmpty { text = text.isEmpty ? ender.remaining : text + " " + ender.remaining }
+        if !ender.remaining.isEmpty { text = DictationText.joining(text, ender.remaining) }
         if session.isHolding { session.endHold() }
         submit()
     }

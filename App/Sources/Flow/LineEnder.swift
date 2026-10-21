@@ -44,13 +44,13 @@ enum LineEnder {
         return nil
     }
 
-    /// Drops the joiner left in front of the phrase ("everyone, " -> "everyone.") and the space.
+    /// Drops the joiner left in front of the phrase ("everyone, " -> "everyone.") and the space. Line breaks are the user's and stay.
     private static func tidy(_ text: String) -> String {
-        var result = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var result = DictationText.trimmingEdges(text)
         guard let last = result.last else { return "" }
         if ",;:-\u{2013}\u{2014}".contains(last) {
             result.removeLast()
-            result = result.trimmingCharacters(in: .whitespacesAndNewlines)
+            result = DictationText.trimmingEdges(result)
             if let end = result.last, !".!?".contains(end) { result += "." }
         }
         return result

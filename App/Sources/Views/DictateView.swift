@@ -221,13 +221,13 @@ struct LastSoundLine: View {
     }
 }
 
-/// Dictated text lands here; Submit sends it to the active Mac.
+/// Dictated text lands here; Submit sends it to the active Mac. Each line break shows as a return marker (a display only: it is not sent).
 struct TextBox: View {
     @Bindable var flow: FlowController
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextEditor(text: $flow.text)
+            MarkedTextEditor(text: $flow.text)
                 .frame(minHeight: 110)
                 .padding(6)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
@@ -237,7 +237,6 @@ struct TextBox: View {
                             .allowsHitTesting(false)
                     }
                 }
-                .accessibilityLabel("Dictated text")
             HStack {
                 Button("Clear", systemImage: "xmark.circle") { flow.text = "" }.disabled(flow.text.isEmpty)
                 Spacer()
@@ -292,7 +291,7 @@ struct QueuedLine: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Last submitted").font(.caption).foregroundStyle(.secondary)
-            Text(item.text).font(.callout).lineLimit(3)
+            Text(DictationText.displayed(item.text)).font(.callout).lineLimit(3).accessibilityLabel(DictationText.spoken(item.text))
             StatusLine(item: item)
             if item.status == .pending, !model.delivery.inFlight.contains(item.id) {
                 Button("Send again") { model.resend(item.id) }.buttonStyle(.bordered)
