@@ -1,3 +1,4 @@
+import KitUI
 import SwiftUI
 
 /// Every transcript and what became of it, with Resend and Copy.
@@ -49,7 +50,8 @@ struct OutboxRow: View {
             Label(item.status == .sent ? "Sent to \(destination)" : "For \(destination)", systemImage: "desktopcomputer")
                 .font(.footnote).foregroundStyle(.secondary)
             WaitingReason(item: item, sending: model.delivery.inFlight.contains(item.id))
-            Text(item.createdAt.formatted(date: .abbreviated, time: .standard)).font(.caption2).foregroundStyle(.tertiary)
+            Text(item.createdAt.formatted(date: .abbreviated, time: .standard)).font(.caption2)
+                .foregroundStyle(KitTokens.Text.placeholder)
             if item.status == .pending, !model.delivery.inFlight.contains(item.id) {
                 Button("Retry", systemImage: "arrow.clockwise") { model.resend(item.id) }.buttonStyle(.borderedProminent)
             }
@@ -83,7 +85,8 @@ struct WaitingReason: View {
             if sending {
                 Label("Sending…", systemImage: "arrow.up.circle").font(.footnote).foregroundStyle(.secondary)
             } else {
-                Label(item.lastError ?? "Waiting to be sent.", systemImage: "hourglass").font(.footnote).foregroundStyle(.orange)
+                Label("Warning: " + (item.lastError ?? "waiting to be sent."), systemImage: "hourglass")
+                    .font(.footnote).foregroundStyle(KitTokens.Status.warning)
             }
         }
     }

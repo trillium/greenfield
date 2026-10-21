@@ -1,3 +1,4 @@
+import KitUI
 import SwiftUI
 
 /// The one place in the app that asks a person to type, reached from the "Advanced" row on the Computers tab.
@@ -60,8 +61,9 @@ struct AdvancedComputerEditView: View {
                     TextField("Tailnet name or address", text: $address)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
                     if draft.baseURL == nil, !address.isEmpty {
-                        Text("Use a name such as mini0.your-tailnet.ts.net, a short name, or a 100.x address, optionally with :port.")
-                            .font(.footnote).foregroundStyle(.orange)
+                        Label("Warning: use a name such as mini0.your-tailnet.ts.net, a short name, or a 100.x address, "
+                              + "optionally with :port.", systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote).foregroundStyle(KitTokens.Status.warning)
                     }
                 }
                 Section("Key") {
@@ -77,7 +79,10 @@ struct AdvancedComputerEditView: View {
                 Section {
                     Button("Test connection") { Task { await test() } }.disabled(!draft.isValid)
                     if let testResult { Text(testResult).font(.footnote) }
-                    if let failure { Text(failure).font(.footnote).foregroundStyle(.red) }
+                    if let failure {
+                        Label("Error: \(failure)", systemImage: "xmark.octagon.fill")
+                            .font(.footnote).foregroundStyle(KitTokens.Status.problem)
+                    }
                 }
             }
             .navigationTitle(target == nil ? "Add a computer" : "Edit computer")

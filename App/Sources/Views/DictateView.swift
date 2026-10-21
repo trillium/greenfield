@@ -1,3 +1,4 @@
+import KitUI
 import SwiftUI
 
 /// The main screen: the state the flow is in, the last sound heard, the text box, and the tap-to-start, tap-to-stop button.
@@ -222,7 +223,8 @@ struct TextBox: View {
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
                 .overlay(alignment: .topLeading) {
                     if flow.text.isEmpty {
-                        Text("Dictated text appears here").foregroundStyle(.tertiary).padding(14).allowsHitTesting(false)
+                        Text("Dictated text appears here").foregroundStyle(KitTokens.Text.placeholder).padding(14)
+                            .allowsHitTesting(false)
                     }
                 }
                 .accessibilityLabel("Dictated text")
@@ -241,12 +243,15 @@ struct DictationButton: View {
     let busy: Bool
     let tap: () -> Void
 
+    /// The mic glyph is text, so it grows with Dynamic Type. It is capped so it still fits the fixed button it sits in.
+    @ScaledMetric(relativeTo: .largeTitle) private var glyphSize: CGFloat = 54
+
     var body: some View {
         Button(action: tap) {
             ZStack {
                 Circle().fill(active ? Color.red : Color.accentColor).opacity(enabled || active ? 1 : 0.35)
                 Image(systemName: active ? "stop.fill" : "mic.fill")
-                    .font(.system(size: 54, weight: .semibold))
+                    .font(.scaledGlyph(min(glyphSize, 64), weight: .semibold))
                     .foregroundStyle(.white)
                     .accessibilityHidden(true)
                 if busy && !active { ProgressView().tint(.white).offset(y: 70) }
@@ -290,14 +295,16 @@ struct StatusLine: View {
     var body: some View {
         switch item.status {
         case .sent where item.delivery == "unconfirmed":
-            Label(sentText + ", but the computer could not confirm it landed in a text field",
-                  systemImage: "questionmark.circle.fill").font(.footnote).foregroundStyle(.orange)
+            Label("Warning: " + sentText + ", but the computer could not confirm it landed in a text field",
+                  systemImage: "questionmark.circle.fill").font(.footnote).foregroundStyle(KitTokens.Status.warning)
         case .sent:
-            Label(sentText + (item.delivery == "confirmed" ? " (confirmed)" : ""), systemImage: "checkmark.circle.fill")
-                .font(.footnote).foregroundStyle(.green)
+            Label("Confirmed: " + sentText + (item.delivery == "confirmed" ? " (confirmed)" : ""),
+                  systemImage: "checkmark.circle.fill")
+                .font(.footnote).foregroundStyle(KitTokens.Status.ok)
         case .pending:
             if let error = item.lastError {
-                Label("Queued: \(error)", systemImage: "tray.full.fill").font(.footnote).foregroundStyle(.orange)
+                Label("Warning: queued: \(error)", systemImage: "tray.full.fill")
+                    .font(.footnote).foregroundStyle(KitTokens.Status.warning)
             } else {
                 Label("Sending…", systemImage: "arrow.up.circle").font(.footnote).foregroundStyle(.secondary)
             }

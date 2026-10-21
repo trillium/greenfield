@@ -29,7 +29,10 @@ struct SoundsView: View {
                 Section("Detector") {
                     LabeledContent("State", value: flow.state.title)
                     LabeledContent("Model", value: flow.modelName.isEmpty ? "Not loaded" : flow.modelName)
-                    if let problem = flow.detectorProblem { Text(problem).font(.footnote).foregroundStyle(.red) }
+                    if let problem = flow.detectorProblem {
+                        Label("Error: \(problem)", systemImage: "xmark.octagon.fill")
+                            .font(.footnote).foregroundStyle(KitTokens.Status.problem)
+                    }
                     if !flow.detectorLabels.isEmpty {
                         Text(flow.detectorLabels.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary)
                     }
@@ -85,7 +88,10 @@ struct SoundRow: View {
             }
             Text("\(sound.event.topClass), power \(Int(sound.event.power)), \(sound.heardAt.formatted(date: .omitted, time: .standard))")
                 .font(.caption).foregroundStyle(.secondary)
-            if let rule = sound.firedRule { Label("Fired: \(rule)", systemImage: "bolt.fill").font(.caption).foregroundStyle(.orange) }
+            if let rule = sound.firedRule {
+                Label("Warning: fired rule \(rule)", systemImage: "bolt.fill")
+                    .font(.caption).foregroundStyle(KitTokens.Status.warning)
+            }
         }
         .accessibilityElement(children: .combine)
     }
