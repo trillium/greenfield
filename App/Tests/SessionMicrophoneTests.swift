@@ -84,7 +84,7 @@ final class SessionMicrophoneTests: XCTestCase {
 /// The app is built against a kit of the same MINOR (while MAJOR is 0), and its own checks keep the shared frameworks' promises.
 final class KitCompatibilityTests: XCTestCase {
     func testTheAppIsBuiltAgainstACompatibleKit() {
-        XCTAssertTrue(ParrotKitInfo.isCompatible(required: "0.2.0"), "kit \(ParrotKitInfo.version): the MINOR must match")
+        XCTAssertTrue(ParrotKitInfo.isCompatible(required: "0.3.0"), "kit \(ParrotKitInfo.version): the MINOR must match")
     }
 
     func testTheChecklistKeepsTheOnboardingPromises() {
