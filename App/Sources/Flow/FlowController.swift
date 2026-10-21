@@ -25,6 +25,15 @@ final class FlowController {
     private(set) var detectorLabels: [String] = []
     private(set) var detectorProblem: String?
     private(set) var submitPending = false
+    /// The last thing Parakeet heard and whether it ended with a line-ender, for the guided first dictation.
+    struct Heard: Equatable {
+        let raw: String
+        let lineEnder: String?
+        let time: Date
+    }
+    private(set) var lastHeard: Heard?
+    /// The outbox item the last submit created.
+    private(set) var lastSubmittedID: UUID?
 
     let session: DictationSession
     let delivery: DeliveryService
@@ -177,6 +186,7 @@ final class FlowController {
         engine.setState(.idle)
         guard !trimmed.isEmpty else { return }
         let item = delivery.outbox.add(text: trimmed)
+        lastSubmittedID = item.id
         log.add(.send, "submitted \(trimmed.count) characters to \(delivery.targets.selected?.name ?? "no computer")")
         text = ""
         Task { await delivery.deliver(item.id) }
@@ -195,7 +205,9 @@ final class FlowController {
 
     private func transcribed(_ words: String, asrMs: Int) {
         log.add(.dictation, "transcribed \(words.count) characters in \(asrMs) ms")
-        guard let ender = LineEnder.match(words, phrases: enabledPhrases) else {
+        let ender = LineEnder.match(words, phrases: enabledPhrases)
+        lastHeard = Heard(raw: words, lineEnder: ender?.phrase, time: Date())
+        guard let ender else {
             text = text.isEmpty ? words : text + " " + words
             return
         }

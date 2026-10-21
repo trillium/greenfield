@@ -10,7 +10,7 @@ struct DictateView: View {
         ScrollView {
             VStack(spacing: 16) {
                 TargetPicker(model: model)
-                HealthBanner(model: model)
+                ReadyLine(model: model)
                 ModelStatusLine(state: session.model)
                 StateBanner(flow: flow)
                 LastSoundLine(sound: flow.lastSound)

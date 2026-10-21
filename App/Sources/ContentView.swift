@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     let model: AppModel
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("onboarding.done") private var onboarded = false
 
     var body: some View {
         TabView {
@@ -15,6 +16,9 @@ struct ContentView: View {
         }
         .task { await model.session.prepareModel() }
         .task { model.flow.startDetector() }
+        .fullScreenCover(isPresented: Binding(get: { !onboarded }, set: { _ in })) {
+            OnboardingView(model: model) { onboarded = true }
+        }
         .task { model.retry.start() }
         .onChange(of: scenePhase, initial: true) { _, phase in
             Task { await model.session.sceneChanged(foreground: phase == .active) }

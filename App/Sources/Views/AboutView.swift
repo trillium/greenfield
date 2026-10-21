@@ -13,6 +13,7 @@ struct AboutView: View {
                     LabeledContent("Where it runs", value: "On this phone")
                 }
                 Section("Support") {
+                    NavigationLink("Get ready: the setup checklist") { OnboardingView(model: model) {} }
                     NavigationLink("Health: is everything set up?") { HealthView(model: model) }
                     NavigationLink("Diagnostics: recent events") { DiagnosticsView(log: log) }
                 }

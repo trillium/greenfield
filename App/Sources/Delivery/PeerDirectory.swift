@@ -28,6 +28,8 @@ final class PeerDirectory {
     private(set) var discovered: [DiscoveredComputer] = []
     private(set) var searching = false
     private(set) var lastError: String?
+    /// What the Bonjour browser says about the local-network permission (iOS has no direct query: a browse that is refused reports it).
+    private(set) var localNetwork: LocalNetworkState = .unknown
     private var browser: NWBrowser?
     private let service: DeliveryService
 
@@ -50,6 +52,10 @@ final class PeerDirectory {
     func startBonjour() {
         guard browser == nil else { return }
         let browser = NWBrowser(for: .bonjour(type: Self.bonjourType, domain: nil), using: .tcp)
+        browser.stateUpdateHandler = { [weak self] state in
+            let permission = Self.permission(for: state)
+            Task { @MainActor in if let permission { self?.localNetwork = permission } }
+        }
         browser.browseResultsChangedHandler = { [weak self] results, _ in
             let names = results.compactMap { result -> String? in
                 if case .service(let name, _, _, _) = result.endpoint { return name }
@@ -59,6 +65,37 @@ final class PeerDirectory {
         }
         browser.start(queue: .main)
         self.browser = browser
+    }
+
+    /// `ready` means the system let the browse run; a policy-denied DNS error (-65570) means the permission is off.
+    nonisolated static func permission(for state: NWBrowser.State) -> LocalNetworkState? {
+        switch state {
+        case .ready: return .granted
+        case .waiting(let error), .failed(let error):
+            if case .dns(let code) = error, code == -65_570 { return .denied }
+            return nil
+        default: return nil
+        }
+    }
+
+    /// With nothing in the list, a single compatible computer found is added and chosen: nobody types an address.
+    /// With computers already listed, exactly one that answered and is compatible is chosen if nothing usable is chosen yet.
+    @discardableResult
+    func chooseTheOnlyComputer(health: TargetHealth) -> MacTarget? {
+        let targets = service.targets
+        if targets.targets.isEmpty, discovered.count == 1, let only = discovered.first {
+            add(only)
+            if let added = targets.targets.first { targets.select(added.id) }
+            return targets.selected
+        }
+        let usable = targets.targets.filter { target in
+            if case .ready = health.state(for: target) { return true }
+            return false
+        }
+        guard usable.count == 1, let only = usable.first, targets.selectedID != only.id else { return nil }
+        if let current = targets.selected, case .ready = health.state(for: current) { return nil }
+        targets.select(only.id)
+        return only
     }
 
     func stopBonjour() {
