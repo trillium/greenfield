@@ -54,7 +54,7 @@ func TestHelpVersionAndUnknownCommand(t *testing.T) {
 	if h.run("help") != 0 || !strings.Contains(h.out.String(), "serve [--port N]") {
 		t.Errorf("help: %s", h.out.String())
 	}
-	for _, name := range []string{"serve", "health", "doctor", "ready", "selftest", "link", "firewall", "logs", "name", "port", "version"} {
+	for _, name := range []string{"serve", "health", "doctor", "ready", "selftest", "link", "firewall", "pair", "logs", "name", "port", "version"} {
 		if !strings.Contains(h.out.String(), name) {
 			t.Errorf("help does not mention %s", name)
 		}

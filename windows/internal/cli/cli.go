@@ -45,6 +45,8 @@ type Deps struct {
 	Serve func(ctx context.Context, o ServeOptions) error
 	// Elevated says whether this program runs as administrator.
 	Elevated func() bool
+	// Local asks this computer's own daemon on loopback, for `pair`: it is the person at this computer asking, so no key and no token.
+	Local func(port int, method, path string, body map[string]any) (status int, answer map[string]any, err error)
 	// FocusWait is how long the selftest window gets to take the keyboard focus (5 seconds by default).
 	FocusWait time.Duration
 }
@@ -112,6 +114,9 @@ func (d *Deps) fill() {
 	if d.Elevated == nil {
 		d.Elevated = winsys.IsElevated
 	}
+	if d.Local == nil {
+		d.Local = localCall
+	}
 	if d.FocusWait == 0 {
 		d.FocusWait = 5 * time.Second
 	}
@@ -128,6 +133,8 @@ const usage = `greenfield-inserter (Windows): receives text from the phone over 
   link               the greenfield://add link that adds this computer to the phone with no typing
   firewall [add|remove]
                      show, add or remove the one Windows Firewall rule that lets the tailnet reach the daemon (add/remove need an administrator terminal)
+  pair [--list | --revoke ID | --revoke-all]
+                     a one-time code for a browser (the PWA) outside the tailnet; list or revoke paired devices
   logs [--tail N] [--since 30m]
                      the daemon's recent log, redacted (also with the daemon stopped)
   name [set NAME|reset]
@@ -171,6 +178,8 @@ func Main(args []string, d Deps) int {
 		return d.ready(args)
 	case "selftest":
 		return d.selftest(args)
+	case "pair":
+		return d.pair(args)
 	case "logs":
 		return d.logs(args)
 	case "name":

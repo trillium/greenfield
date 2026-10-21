@@ -18,6 +18,7 @@ import (
 	"greenfield-inserter/internal/compat"
 	"greenfield-inserter/internal/inserter"
 	"greenfield-inserter/internal/logsvc"
+	"greenfield-inserter/internal/pairing"
 	"greenfield-inserter/internal/state"
 	"greenfield-inserter/internal/tailnet"
 )
@@ -77,6 +78,8 @@ type Config struct {
 	LogSource logsvc.Source
 	Limiter   *logsvc.RateLimiter
 	Dedupe    *state.Dedupe
+	// Pairing is the one-time pairing of a browser outside the tailnet (the PWA); nil gets a fresh in-memory book.
+	Pairing pairing.Book
 
 	Name      func() string
 	Listening func() []string
@@ -107,6 +110,9 @@ func New(c Config) *Handler {
 	}
 	if c.Dedupe == nil {
 		c.Dedupe = state.NewDedupe()
+	}
+	if c.Pairing == nil {
+		c.Pairing = pairing.New()
 	}
 	if c.Name == nil {
 		c.Name = func() string { return "Windows computer" }
@@ -158,8 +164,13 @@ func (r response) with(k, v string) response {
 var (
 	assistPaths = map[string]string{"/assist/windows": "GET", "/assist/windows/focus": "POST", "/assist/pointer/session": "POST"}
 	known       = map[string]string{"/status": "GET", "/text": "POST", "/peers": "GET", "/logs": "GET"}
-	loggable    = func() map[string]bool {
+	// pairPaths: one-time pairing of a browser outside the tailnet (the PWA), see internal/pairing.
+	pairPaths = map[string]string{"/pair": "POST", "/pair/code": "POST", "/pair/devices": "GET", "/pair/revoke": "POST"}
+	loggable  = func() map[string]bool {
 		m := map[string]bool{"/health": true}
+		for p := range pairPaths {
+			m[p] = true
+		}
 		for p := range known {
 			m[p] = true
 		}
@@ -196,7 +207,8 @@ func (h *Handler) read(r *http.Request) request {
 			}
 		}
 	}
-	if req.method == http.MethodPost && r.URL.Path == "/text" {
+	_, isPair := pairPaths[r.URL.Path]
+	if req.method == http.MethodPost && (r.URL.Path == "/text" || isPair) {
 		if len(r.TransferEncoding) > 0 {
 			e := errorResponse(501, "not_implemented", "chunked bodies are not supported")
 			req.bodyErr = &e
@@ -227,8 +239,17 @@ func (h *Handler) Handle(req request) response {
 }
 
 func (h *Handler) route(req request) response {
+	// A request that went through a reverse proxy (`tailscale serve`, the PWA's server) reaches us from loopback, but it is not the
+	// person at this computer and its TCP peer says nothing about who is calling: it is neither local nor identifiable. Only a paired
+	// device's token lets it in. The tailnet-identity path below is untouched for every request that carries no proxy header.
+	if pairing.Proxied(req.headers) {
+		req.fromLoopback, req.peer = false, ""
+	}
 	if req.path == "/health" {
 		return h.health(req)
+	}
+	if _, ok := pairPaths[req.path]; ok {
+		return h.pair(req)
 	}
 	wanted, ok := known[req.path]
 	if !ok {
@@ -238,8 +259,22 @@ func (h *Handler) route(req request) response {
 		return errorResponse(404, "not_found", "unknown path")
 	}
 	// Authorize before revealing anything else, including whether the method is right.
-	if denied := h.authorize(req); denied != nil {
+	denied, via := h.authorize(req)
+	if denied != nil {
 		return *denied
+	}
+	// A paired browser may send text and read the status, like a caller with the optional key on the Mac: not the computer list, the
+	// logs or the assist tools.
+	if via == viaToken {
+		switch req.path {
+		case "/logs":
+			return errorResponse(403, "logs_need_same_user", "logs are only shown to this computer and to devices of its tailnet user")
+		case "/peers":
+			return errorResponse(403, "peers_need_same_user", "the computer list is only shown to devices of this computer's tailnet user")
+		}
+		if _, isAssist := assistPaths[req.path]; isAssist {
+			return errorResponse(403, "assist_need_same_user", "the assist tools are only for this computer and devices of its tailnet user")
+		}
 	}
 	// Logs are for a person debugging, so a computer with a wrong or old app still answers them: no app-version gate here.
 	if req.path == "/logs" {
@@ -264,19 +299,28 @@ func (h *Handler) route(req request) response {
 	}
 }
 
-// authorize: who may use the daemon is this computer itself, or any device of the same tailnet user as this computer's own node
-// (asked of the local Tailscale). If Tailscale cannot say who is calling, the request is refused: it fails closed. There is no key
-// and no password; a device of another user, a tagged device and a request carrying a key header are all refused.
-func (h *Handler) authorize(req request) *response {
+// authorize: who may use the daemon is this computer itself, any device of the same tailnet user as this computer's own node
+// (asked of the local Tailscale), or a browser paired at this computer, which presents its token. If Tailscale cannot say who is
+// calling and there is no valid token, the request is refused: it fails closed. There is no key and no password; a device of another
+// user, a tagged device and a request carrying a key header are all refused.
+func (h *Handler) authorize(req request) (*response, via) {
 	if req.fromLoopback {
-		return nil
+		return nil, viaLocal
+	}
+	// A paired device (the PWA) presents its token; a wrong, expired or revoked one is refused, never retried as something else.
+	if presented := req.headers["x-greenfield-token"]; presented != "" {
+		if _, ok := h.c.Pairing.Verify(presented); ok {
+			return nil, viaToken
+		}
+		r := errorResponse(401, "invalid_token", "this device is not paired (the token is wrong, expired or revoked); pair it again with a new code from this computer")
+		return &r, viaToken
 	}
 	var refusal response
 	if req.peer != "" && h.c.Identity != nil {
 		p := h.c.Identity.Identify(req.peer)
 		switch p.Kind {
 		case tailnet.SameUser:
-			return nil
+			return nil, viaIdentity
 		case tailnet.OtherUser:
 			refusal = errorResponse(401, "unauthorized", "this device belongs to a different tailnet user ("+p.Login+") than this computer")
 		default:
@@ -288,11 +332,20 @@ func (h *Handler) authorize(req request) *response {
 	// The Mac daemon has an optional key for devices of other users. This one has none, by design: trust is the tailnet identity. A
 	// request that offers a key anyway is refused as the Mac refuses a wrong one.
 	if req.headers["x-dictation-key"] != "" {
-		r := errorResponse(401, "unauthorized", "this computer does not use keys; it takes text from devices of its own tailnet user only")
-		return &r
+		r := errorResponse(401, "unauthorized", "this computer does not use keys; it takes text from devices of its own tailnet user, or a browser paired at this computer")
+		return &r, viaIdentity
 	}
-	return &refusal
+	return &refusal, viaIdentity
 }
+
+// via is how a caller got in.
+type via int
+
+const (
+	viaLocal via = iota
+	viaIdentity
+	viaToken
+)
 
 // checkAppVersion: the app sends its own version in X-Greenfield-App. It is remembered (so health can report on the apps seen) and
 // checked against the compatibility rule; a request without the header (curl, the selftest) is let through.
@@ -339,6 +392,107 @@ func (h *Handler) health(req request) response {
 	body["pid"] = os.Getpid()
 	body["executable"] = h.c.Executable
 	return jsonResponse(200, body)
+}
+
+// pair is the one-time pairing (internal/pairing). Asking for a code, listing and revoking are for the person at this computer
+// (loopback, no proxy header): the `greenfield-inserter pair` command. Exchanging a code is open to whoever can reach the port,
+// because the code is the credential: short-lived, single use, burned by wrong guesses, rate limited. Nothing here logs a code or
+// a token.
+func (h *Handler) pair(req request) response {
+	wrong := func(wanted string) response {
+		return errorResponse(405, "method_not_allowed", "use "+wanted).with("Allow", wanted)
+	}
+	localOnly := errorResponse(403, "local_only", "this is only for the person at this computer: run `greenfield-inserter pair`")
+	if want := pairPaths[req.path]; req.method != want {
+		if (req.path == "/pair/code" || req.path == "/pair/devices") && !req.fromLoopback {
+			return localOnly
+		}
+		return wrong(want)
+	}
+	switch req.path {
+	case "/pair":
+		if req.bodyErr != nil {
+			return *req.bodyErr
+		}
+		var object map[string]any
+		code, isString := "", false
+		if json.Unmarshal(req.body, &object) == nil && object != nil {
+			code, isString = object["code"].(string)
+		}
+		if !isString || len(code) > 32 {
+			return errorResponse(400, "bad_request", `body must be {"code": "ABCD-EFGH", "device": "name"}`)
+		}
+		deviceName, _ := object["device"].(string)
+		res := h.c.Pairing.Redeem(code, deviceName)
+		switch res.Outcome {
+		case pairing.SlowDown:
+			return errorResponse(429, "rate_limited", "too many attempts; try again in "+strconv.Itoa(res.Wait)+" seconds").with("Retry-After", strconv.Itoa(res.Wait))
+		case pairing.Refused:
+			h.log("pair refused")
+			return errorResponse(401, "pair_refused", "that code is wrong, already used or expired; ask for a new one at this computer with `greenfield-inserter pair`")
+		}
+		h.log("paired device id=" + res.Device.ID)
+		return jsonResponse(200, map[string]any{"ok": true, "token": res.Token, "device": deviceJSON(res.Device),
+			"expires_in_s": int(res.Device.ExpiresAt.Sub(h.c.Now()).Seconds()), "name": h.c.Name(), "version": h.c.Version})
+	case "/pair/code":
+		if !req.fromLoopback {
+			return localOnly
+		}
+		c := h.c.Pairing.IssueCode()
+		h.log("pair code issued")
+		return jsonResponse(200, map[string]any{"ok": true, "code": c.Text, "expires_in_s": int(c.ExpiresIn.Seconds()), "name": h.c.Name()})
+	case "/pair/devices":
+		if !req.fromLoopback {
+			return localOnly
+		}
+		list := h.c.Pairing.Devices()
+		out := make([]map[string]any, 0, len(list))
+		for _, d := range list {
+			out = append(out, deviceJSON(d))
+		}
+		return jsonResponse(200, map[string]any{"ok": true, "devices": out})
+	default: // /pair/revoke
+		if req.fromLoopback {
+			var object map[string]any
+			if req.bodyErr != nil {
+				return *req.bodyErr
+			}
+			if json.Unmarshal(req.body, &object) != nil || object == nil {
+				return errorResponse(400, "bad_request", `body must be {"id": "..."} or {"all": true}`)
+			}
+			if all, _ := object["all"].(bool); all {
+				n := h.c.Pairing.RevokeAll()
+				h.log("pair revoked all devices=" + strconv.Itoa(n))
+				return jsonResponse(200, map[string]any{"ok": true, "revoked": n})
+			}
+			id, _ := object["id"].(string)
+			if id == "" {
+				return errorResponse(400, "bad_request", `body must be {"id": "..."} or {"all": true}`)
+			}
+			if !h.c.Pairing.Revoke(id) {
+				return errorResponse(404, "no_such_device", "no paired device has that id")
+			}
+			h.log("pair revoked id=" + logsvc.ID(id))
+			return jsonResponse(200, map[string]any{"ok": true, "revoked": 1})
+		}
+		// A paired device may forget itself: its own token, nothing else.
+		dev, ok := h.c.Pairing.Verify(req.headers["x-greenfield-token"])
+		if !ok {
+			return errorResponse(401, "unauthorized", "present this device's token, or run `greenfield-inserter pair --revoke` at this computer")
+		}
+		h.c.Pairing.Revoke(dev.ID)
+		h.log("pair device left id=" + dev.ID)
+		return jsonResponse(200, map[string]any{"ok": true, "revoked": 1})
+	}
+}
+
+func deviceJSON(d pairing.Device) map[string]any {
+	var seen any
+	if !d.LastSeen.IsZero() {
+		seen = d.LastSeen.UTC().Format(time.RFC3339)
+	}
+	return map[string]any{"id": d.ID, "name": d.Name, "created_at": d.CreatedAt.UTC().Format(time.RFC3339),
+		"expires_at": d.ExpiresAt.UTC().Format(time.RFC3339), "last_seen": seen}
 }
 
 func (h *Handler) peers() response {
