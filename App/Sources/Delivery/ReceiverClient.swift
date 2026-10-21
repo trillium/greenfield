@@ -28,7 +28,7 @@ struct ReceiverClient: Sendable {
 
         var message: String {
             switch self {
-            case .badKey: return "This computer asks for a key, or refuses the saved one. Fix it under Advanced in its settings."
+            case .badKey: return "This computer will not take text from this phone. Health says the one step that fixes it."
             case .keyNotConfigured: return "That computer's input agent is not set up yet. Update or restart it."
             case .secureInput: return "A password field is focused on the computer."
             case .locked: return "The computer's screen is locked."

@@ -107,7 +107,7 @@ final class AutoRetry {
     func blocker(in health: ReceiverClient.Health) -> String? {
         switch health {
         case .unreachable(let reason): return "not reachable (\(reason))"
-        case .wrongKey: return "it asks for a key"
+        case .wrongKey: return "it will not take text from this phone"
         case .keyNotSetOnMac: return "its input agent is not set up yet"
         case .incompatible(let message): return message
         case .ready(let status):

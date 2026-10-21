@@ -143,7 +143,7 @@ enum HealthReport {
     private static func computers(_ input: HealthInputs) -> [HealthItem] {
         guard !input.computers.isEmpty else {
             return [HealthItem(id: "computers", title: "Computers", level: .problem, detail: "No computer is set up, so there is nowhere to send text.",
-                               fix: "Add one in the Computers tab: its tailnet name and its key.")]
+                               fix: "Run mac/install.sh on the Mac, then leave this app open: the computer turns up here on its own.")]
         }
         var items = input.computers.map { computer($0, app: input.appVersion, minimumAgent: input.minimumAgent) }
         if !input.computers.contains(where: \.isActive) {
@@ -165,10 +165,10 @@ enum HealthReport {
             return ready(status, of: computer, id: id, title: title, versions: (app, minimumAgent))
         case .wrongKey where computer.hasKey:
             return HealthItem(id: id, title: title, level: .problem, detail: "The computer is reachable but refuses the key saved for it.",
-                              fix: "Open the computer under Computers > Advanced and remove the saved key (computers on the tailnet need none), or enter the right one.")
+                              fix: "Open the computer under Computers > Advanced and remove the saved key (a computer on the tailnet needs none), then Check again.")
         case .wrongKey:
             return HealthItem(id: id, title: title, level: .problem, detail: "The computer is reachable but its input agent asks for a key.",
-                              fix: "Update the agent on \(computer.name) (`\(agent)`) to the version that trusts the tailnet, or add its key under Computers > Advanced.")
+                              fix: "Update the agent on \(computer.name) (`make -C mac install` there), so it trusts the tailnet instead of asking this phone for a key, then Check again.")
         case .keyNotSetOnMac:
             return HealthItem(id: id, title: title, level: .problem, detail: "The computer is reachable but its input agent is not set up yet.",
                               fix: "On \(computer.name) update and restart the agent (`\(agent) health` says what is missing).")

@@ -14,7 +14,7 @@ final class TargetHealth {
             case .checking: return "Checking"
             case .ready(let status): return status.version.isEmpty ? "Ready" : "Ready (agent \(status.version))"
             case .notice(let message): return message
-            case .wrongKey: return "Asks for a key (see Advanced)"
+            case .wrongKey: return "Will not take text from this phone (see Health)"
             case .keyNotSetOnMac: return "Its input agent is not set up yet"
             case .incompatible(let message): return message
             case .unreachable(let message): return message

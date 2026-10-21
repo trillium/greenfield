@@ -86,6 +86,7 @@ final class AutoRetryTests: XCTestCase {
         XCTAssertTrue(retry?.blocker(in: .ready(plain))?.contains("cannot insert text") ?? false)
         XCTAssertNotNil(retry?.blocker(in: .unreachable("timed out")))
         XCTAssertNotNil(retry?.blocker(in: .wrongKey))
+        XCTAssertEqual(retry?.blocker(in: .wrongKey), "it will not take text from this phone")
         XCTAssertEqual(retry?.blocker(in: .ready(.init(name: "m", version: "0.1.0"))), "app and agent versions do not match")
     }
 

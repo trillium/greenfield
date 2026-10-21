@@ -27,7 +27,7 @@ A Mac that no app has connected to yet is a note, never a failure.
 **Contract tests.** Each side parses the other side's recorded samples. The phone records what it sends in `App/Tests/Fixtures/request-*.json` (the phone's tests check the real client still produces exactly those fields); the Mac records what the daemon answers in `mac/Tests/Fixtures/status-*.json` (the phone's tests parse every file there and require a semver `version` and `min_client_version`).
 
 ## Transport and trust
-- Port `47821`. Plain HTTP over the tailnet. The trust boundary is tailnet membership: the agent trusts callers by their tailnet identity, so the app needs no key and the preset computers work out of the box. The app can still send an optional key in the `X-Dictation-Key` header (Computers > edit > Advanced; never in a URL, a log or the repository; kept in the iPhone Keychain, this device only). A 401 is shown as "this computer asks for a key" only when the agent asks for one.
+- Port `47821`. Plain HTTP over the tailnet. The trust boundary is tailnet membership: the agent trusts callers by their tailnet identity, so the app needs no key and the preset computers work out of the box. The app can still send an optional key in the `X-Dictation-Key` header (Computers > Advanced; never in a URL, a log or the repository; kept in the iPhone Keychain, this device only). A 401 is shown as "this computer will not take text from this phone" only when the agent asks for one or refuses the saved one.
 - iOS App Transport Security allows plain http to `*.ts.net` (subdomains included) and to local short names; there is no blanket exception. 100.x tailnet addresses are sent over a plain TCP transport (`HTTPTransport.swift`) because ATS cannot allow an address range. Before sending to a tailnet name or address the app checks that the phone is on the tailnet and says so if it is not.
 - Audio never leaves the phone. Only text is sent.
 
@@ -40,7 +40,7 @@ Used for the status line and dot beside each computer. The app reads `name`, `ve
 | 200, `accessibility` false | orange: needs Accessibility approval on that computer |
 | 200, `screen_locked` | orange: ready, but its screen is locked |
 | 200, `secure_input` | orange: ready, but a password field is focused |
-| 401 | orange: the agent asks for a key (or refuses the saved one); fix under Advanced |
+| 401 | orange: the agent asks for a key (or refuses the saved one); update the agent on that Mac, or remove a saved key under Advanced |
 | 503 `key_not_configured` | orange: an older agent that is not set up yet; update and restart it |
 | no answer | red: the reason (not on the tailnet, unreachable, timed out) |
 
@@ -55,7 +55,7 @@ A computer with no key saved is checked like any other; a missing key is never r
 | Status / `error` | Meaning in the app |
 |---|---|
 | 200 | sent (a duplicate counts as sent) |
-| 401 `unauthorized` | the agent asks for a key (or refuses the saved one) |
+| 401 `unauthorized` | the computer will not take text from this phone (the agent asks for a key, or refuses the saved one) |
 | 503 `key_not_configured` | an older agent that is not set up yet |
 | 503 `accessibility_not_granted` | the agent needs Accessibility approval |
 | 409 `secure_input` | a password field is focused; nothing typed |

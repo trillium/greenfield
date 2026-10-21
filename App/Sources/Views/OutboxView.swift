@@ -70,7 +70,7 @@ struct OutboxRow: View {
     }
 }
 
-/// Why an item is still waiting, in plain words: "This computer asks for a key.", "The computer could not be reached."
+/// Why an item is still waiting, in plain words: "This computer will not take text from this phone.", "The computer could not be reached."
 struct WaitingReason: View {
     let item: OutboxItem
     let sending: Bool

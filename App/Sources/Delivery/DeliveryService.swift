@@ -60,7 +60,7 @@ final class DeliveryService {
 
     /// `GET /status` for the Mac, with its saved key unless `key` is given (testing an edit before it is saved).
     func health(of target: MacTarget, key: String? = nil) async -> ReceiverClient.Health {
-        guard let base = target.baseURL else { return .unreachable("The address is not valid.") }
+        guard let base = target.baseURL else { return .unreachable("This phone could not work out how to reach that computer.") }
         return await client.health(of: base, key: key ?? targets.key(for: target))
     }
 }

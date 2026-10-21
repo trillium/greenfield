@@ -77,8 +77,8 @@ final class DeliveryServiceTests: XCTestCase {
         let id = rig.outbox.add(text: "x").id
         _ = await rig.service.deliver(id)
         XCTAssertEqual(rig.outbox.item(id)?.status, .pending)
-        XCTAssertTrue(rig.outbox.item(id)?.lastError?.contains("asks for a key") ?? false)
-        XCTAssertTrue(rig.outbox.item(id)?.lastError?.contains("Advanced") ?? false)
+        XCTAssertTrue(rig.outbox.item(id)?.lastError?.contains("will not take text from this phone") ?? false)
+        XCTAssertTrue(rig.outbox.item(id)?.lastError?.contains("Health") ?? false)
     }
 
     func testNoMacSelectedKeepsTheTextWithoutSending() async throws {

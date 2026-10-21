@@ -29,7 +29,7 @@ struct SocketTransport: HTTPTransport {
 
     func send(_ request: URLRequest) async throws -> (status: Int, data: Data) {
         guard let url = request.url, let host = url.host, let port = NWEndpoint.Port(rawValue: UInt16(url.port ?? 80)) else {
-            throw Failure(message: "The address is not valid.")
+            throw Failure(message: "This phone could not work out how to reach that computer.")
         }
         let wire = Self.encode(request, host: host, port: Int(port.rawValue))
         let connection = NWConnection(host: NWEndpoint.Host(host), port: port, using: .tcp)
