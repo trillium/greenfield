@@ -58,8 +58,17 @@ struct OutboxRow: View {
             WaitingReason(item: item, sending: model.delivery.inFlight.contains(item.id))
             Text(item.createdAt.formatted(date: .abbreviated, time: .standard)).font(.caption2)
                 .foregroundStyle(KitTokens.Text.placeholder)
-            if item.status == .pending, !model.delivery.inFlight.contains(item.id) {
-                Button("Retry", systemImage: "arrow.clockwise") { model.resend(item.id) }.buttonStyle(.borderedProminent)
+            HStack(spacing: 12) {
+                if item.status == .pending, !model.delivery.inFlight.contains(item.id) {
+                    Button("Retry", systemImage: "arrow.clockwise") { model.resend(item.id) }.buttonStyle(.borderedProminent)
+                        .accessibilityLabel("Retry sending")
+                        .accessibilityHint("Sends the text again to the chosen computer.")
+                }
+                Button("Delete", systemImage: "trash", role: .destructive) { confirmDelete = true }
+                    .buttonStyle(.bordered)
+                    .tint(KitTokens.Status.problem)
+                    .accessibilityLabel("Delete this transcript")
+                    .accessibilityHint("Asks to confirm. It is taken off this phone. This cannot be undone.")
             }
         }
         .padding(.vertical, 2)

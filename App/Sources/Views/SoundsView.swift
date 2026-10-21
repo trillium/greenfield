@@ -131,10 +131,19 @@ struct ModelPackList: View {
             }
             .accessibilityHint("Switches to the bundled model on this phone")
             ForEach(entries) { entry in
-                Button { choose(entry.id) } label: {
-                    Label(entry.name, systemImage: active == entry.id ? "checkmark.circle.fill" : "circle")
+                HStack {
+                    Button { choose(entry.id) } label: {
+                        Label(entry.name, systemImage: active == entry.id ? "checkmark.circle.fill" : "circle")
+                    }
+                    .accessibilityHint("Switches to this model")
+                    Spacer()
+                    Button("Remove", systemImage: "trash", role: .destructive) {
+                        removingID = entry.id
+                    }
+                    .buttonStyle(.borderless)
+                    .tint(KitTokens.Status.problem)
+                    .accessibilityHint("Removes this model pack from this phone")
                 }
-                .accessibilityHint("Switches to this model")
                 .swipeActions { Button("Remove", role: .destructive) { removingID = entry.id } }
             }
         }
@@ -175,6 +184,12 @@ struct PhraseList: View {
                     WordToggle(title: phrase.text.isEmpty ? "New phrase" : phrase.text, isOn: $phrase.enabled)
                         .accessibilityHint("Switches this line-ender on or off")
                     TextField("Phrase", text: $phrase.text).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    Button("Remove this phrase", systemImage: "trash", role: .destructive) {
+                        if let idx = phrases.firstIndex(where: { $0.id == phrase.id }) { phrases.remove(at: idx) }
+                    }
+                    .buttonStyle(.borderless)
+                    .tint(KitTokens.Status.problem)
+                    .accessibilityHint("Removes this line-ender from your list")
                 }
             }
             .onDelete { phrases.remove(atOffsets: $0) }

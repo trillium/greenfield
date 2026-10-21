@@ -1,3 +1,4 @@
+import KitUI
 import ParrotKit
 import SwiftUI
 
@@ -28,10 +29,19 @@ struct TargetsView: View {
                     ContentUnavailableView("No computers yet", systemImage: "desktopcomputer", description: description)
                 }
                 ForEach(model.targets.targets) { target in
-                    TargetRow(target: target, model: model)
-                        .swipeActions(edge: .trailing) {
-                            Button("Delete", systemImage: "trash", role: .destructive) { deleting = target }
+                    VStack(alignment: .leading) {
+                        TargetRow(target: target, model: model)
+                        Button("Delete", systemImage: "trash", role: .destructive) {
+                            deleting = target
                         }
+                        .buttonStyle(.borderless)
+                        .tint(KitTokens.Status.problem)
+                        .accessibilityLabel("Delete \(target.name)")
+                        .accessibilityHint("Deletes this computer from this phone")
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button("Delete", systemImage: "trash", role: .destructive) { deleting = target }
+                    }
                 }
                 if !model.peers.discovered.isEmpty {
                     Section("Found on your network") {
