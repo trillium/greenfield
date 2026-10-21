@@ -21,7 +21,7 @@ struct SoundsView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Teach your sounds").font(.headline)
                             Text("Record the sounds you want to use; your own trainer makes a model for them.")
-                                .font(.footnote).foregroundStyle(.secondary)
+                                .font(.footnote).foregroundStyle(KitTokens.Text.secondary)
                         }
                     }
                     .accessibilityIdentifier("teachLink")
@@ -38,7 +38,7 @@ struct SoundsView: View {
                     .accessibilityIdentifier("levelsLink")
                     .accessibilityHint("Opens the levels screen")
                 }
-                Section("Detector") {
+                Section {
                     LabeledContent("State", value: flow.state.title)
                     LabeledContent("Model", value: flow.modelName.isEmpty ? "Not loaded" : flow.modelName)
                     if let problem = flow.detectorProblem {
@@ -46,13 +46,23 @@ struct SoundsView: View {
                             .font(.footnote).foregroundStyle(KitTokens.Status.problem)
                     }
                     if !flow.detectorLabels.isEmpty {
-                        Text(flow.detectorLabels.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary)
+                        Text(flow.detectorLabels.joined(separator: ", ")).font(.caption).foregroundStyle(KitTokens.Text.secondary)
                     }
+                } header: {
+                    Text("Detector")
+                        .font(.footnote)
+                        .foregroundStyle(KitTokens.Text.secondary)
+                        .accessibilityAddTraits(.isHeader)
                 }
-                Section("Rules") {
+                Section {
                     NavigationLink("Edit rules (\(flow.rules.count))") { RulesView(flow: flow) }
                         .accessibilityHint("Opens the rules list")
                     ForEach(flow.rules.filter(\.enabled)) { Text($0.summary + " (\($0.action.title))").font(.footnote) }
+                } header: {
+                    Text("Rules")
+                        .font(.footnote)
+                        .foregroundStyle(KitTokens.Text.secondary)
+                        .accessibilityAddTraits(.isHeader)
                 }
                 Section {
                     PhraseList(flow: flow)
@@ -67,10 +77,10 @@ struct SoundsView: View {
                     ModelPackList(model: model, message: $message)
                     Button("Import a model pack…", systemImage: "square.and.arrow.down") { importing = true }
                         .accessibilityHint("Choose a model pack file to add")
-                    if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
+                    if let message { Text(message).font(.footnote).foregroundStyle(KitTokens.Text.secondary) }
                 }
                 Section("Sounds heard") {
-                    if flow.recentSounds.isEmpty { Text("Make a sound near the microphone.").foregroundStyle(.secondary) }
+                    if flow.recentSounds.isEmpty { Text("Make a sound near the microphone.").foregroundStyle(KitTokens.Text.secondary) }
                     ForEach(flow.recentSounds) { SoundRow(sound: $0) }
                 }
             }

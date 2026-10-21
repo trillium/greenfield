@@ -1,3 +1,4 @@
+import KitUI
 import SwiftUI
 
 /// The chosen Mac with its reachability dot; a menu switches between Macs.
@@ -12,7 +13,7 @@ struct TargetPicker: View {
         let targets = model.targets
         if targets.targets.isEmpty {
             Label(emptyNote, systemImage: "desktopcomputer")
-                .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.leading)
+                .font(.footnote).foregroundStyle(KitTokens.Text.secondary).multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             Menu {

@@ -18,7 +18,7 @@ struct TargetsView: View {
                             Label("Waiting to send", systemImage: "tray.full")
                             Spacer()
                             if !model.outbox.pending.isEmpty {
-                                Text("\(model.outbox.pending.count)").foregroundStyle(.secondary)
+                                Text("\(model.outbox.pending.count)").foregroundStyle(KitTokens.Text.secondary)
                             }
                         }
                     }
@@ -66,7 +66,7 @@ struct TargetsView: View {
                     Text goes to exactly one computer: the active one (tap to choose). Computers on your tailnet are trusted by \
                     tailnet identity, so there is nothing to type. They turn up here on their own, over the tailnet or by \
                     scanning the QR code they show. Keep Tailscale on so this phone can reach them.
-                    """).font(.footnote).foregroundStyle(.secondary)
+                    """).font(.footnote).foregroundStyle(KitTokens.Text.secondary)
                 }
                 Section {
                     NavigationLink {
@@ -123,8 +123,8 @@ struct TrainerRows: View {
                         Circle().fill(probe.health?.compatible == true ? Color.green : Color.orange).frame(width: 10, height: 10)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(trainer.name).font(.headline)
-                            Text(trainer.address).font(.caption).foregroundStyle(.secondary)
-                            Text(probe.summary).font(.caption2).foregroundStyle(.secondary)
+                            Text(trainer.address).font(.caption).foregroundStyle(KitTokens.Text.secondary)
+                            Text(probe.summary).font(.caption2).foregroundStyle(KitTokens.Text.secondary)
                         }
                     }
                     .accessibilityElement(children: .combine)
@@ -155,8 +155,8 @@ struct TargetRow: View {
                 HealthDot(state: state)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(target.name).font(.headline).foregroundStyle(.primary)
-                    Text(target.address).font(.caption).foregroundStyle(.secondary)
-                    Text(state.summary).font(.caption2).foregroundStyle(.secondary)
+                    Text(target.address).font(.caption).foregroundStyle(KitTokens.Text.secondary)
+                    Text(state.summary).font(.caption2).foregroundStyle(KitTokens.Text.secondary)
                 }
                 Spacer()
                 if target.id == model.targets.selectedID {

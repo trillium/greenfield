@@ -35,7 +35,7 @@ struct DictateView: View {
         VStack(spacing: 4) {
             Text(headline(session)).font(.subheadline.weight(.semibold)).multilineTextAlignment(.center)
             if let detail = detail(session) {
-                Text(detail).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                Text(detail).font(.footnote).foregroundStyle(KitTokens.Text.secondary).multilineTextAlignment(.center)
             }
             if session.micDenied || retryable(session) {
                 Button("Try the microphone again") { Task { await session.retryMicrophone() } }.buttonStyle(.bordered)
@@ -177,9 +177,12 @@ struct ModelStatusLine: View {
 
     private var color: Color {
         switch state {
-        case .ready: return .green
-        case .failed: return .red
-        default: return .secondary
+        // The system .green and .red do not reach the audit's 4.5:1 floor on the white card behind this row;
+        // the kit's status tokens do, so the spoken state ("Speech model ready" / "Speech model failed") still lines up
+        // with a foreground that is high enough contrast for a screen that is not just colour.
+        case .ready: return KitTokens.Status.ok
+        case .failed: return KitTokens.Status.problem
+        default: return KitTokens.Text.secondary
         }
     }
 }
@@ -194,7 +197,7 @@ struct StateBanner: View {
                 .font(.title2.weight(.bold)).foregroundStyle(.white)
                 .frame(maxWidth: .infinity).padding(.vertical, 10)
                 .background(color, in: RoundedRectangle(cornerRadius: 12))
-            Text(flow.hint).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Text(flow.hint).font(.footnote).foregroundStyle(KitTokens.Text.secondary).multilineTextAlignment(.center)
         }
         .sensoryFeedback(.impact, trigger: flow.state)
         .accessibilityElement(children: .combine)
@@ -221,7 +224,7 @@ struct LastSoundLine: View {
                 Label("Last sound: \(sound.event.pattern) (\(percent)%), \(ago) s ago", systemImage: "ear")
                     .font(.footnote.monospacedDigit())
             } else {
-                Label("No sound recognised yet", systemImage: "ear").font(.footnote).foregroundStyle(.secondary)
+                Label("No sound recognised yet", systemImage: "ear").font(.footnote).foregroundStyle(KitTokens.Text.secondary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
