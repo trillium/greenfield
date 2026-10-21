@@ -12,3 +12,8 @@ scripts/test-commit-tooling.sh
 scripts/version.sh
 docs/commits.md
 docs/parity.md
+scripts/pull-logs.sh
+scripts/test-pull-logs.sh
+App/Sources/Support/LogRedactor.swift
+App/Sources/Support/LogBundle.swift
+App/Tests/LogRedactorTests.swift
