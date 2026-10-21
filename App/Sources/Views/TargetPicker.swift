@@ -37,6 +37,7 @@ struct TargetPicker: View {
             .accessibilityValue(targets.selected?.name ?? "")
             // What is written on the control is its first word too, so "Tap Computer" works as well as "Tap Active computer".
             .accessibilityInputLabels(["Active computer", String(prefix.dropLast(prefix.hasSuffix(":") ? 1 : 0))])
+            .accessibilityHint("Opens a menu to choose another computer")
         }
     }
 }

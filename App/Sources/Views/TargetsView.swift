@@ -43,8 +43,13 @@ struct TargetsView: View {
                         Button("Delete", systemImage: "trash", role: .destructive) { deleting = target }
                     }
                 }
-                if !model.peers.discovered.isEmpty {
+                if model.peers.searching || !model.peers.discovered.isEmpty {
                     Section("Found on your network") {
+                        if model.peers.searching {
+                            Label("Looking on your network and tailnet\u{2026}", systemImage: "antenna.radiowaves.left.and.right")
+                                .accessibilityElement(children: .combine)
+                                .accessibilityLabel("Looking on your network")
+                        }
                         ForEach(model.peers.discovered) { computer in
                             Button {
                                 model.peers.add(computer)
@@ -139,6 +144,10 @@ struct TargetRow: View {
 
     var body: some View {
         let state = model.health.state(for: target)
+        let incompatible: Bool = { if case .incompatible = state { return true } else { return false } }()
+        let hint = incompatible
+            ? "Update first. Text will not go here until it is compatible."
+            : "Makes this the computer that receives your text"
         Button {
             model.targets.select(target.id)
         } label: {
@@ -157,7 +166,8 @@ struct TargetRow: View {
                 }
             }
         }
+        .disabled(incompatible)
         .accessibilityElement(children: .combine)
-        .accessibilityHint("Selects this Mac for dictation")
+        .accessibilityHint(hint)
     }
 }

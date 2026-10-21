@@ -100,6 +100,7 @@ struct SubmitBar: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent).controlSize(.large).disabled(!flow.canSubmit)
+            .accessibilityHint(flow.canSubmit ? "" : "Nothing to send yet.")
         }
         .padding(.horizontal).padding(.vertical, 8)
         .background(.bar)
@@ -275,7 +276,7 @@ struct DictationButton: View {
         .disabled(!enabled && !active)
         .sensoryFeedback(.impact, trigger: active)
         .accessibilityLabel(active ? "Stop dictation" : "Start dictation")
-        .accessibilityHint("Tap to \(active ? "stop and write the text into the box" : "start recording")")
+        .accessibilityHint(active ? "Tap to stop and write the text into the box" : "Tap to start recording")
         .accessibilityValue(active ? "Dictating" : "Idle")
         .onChange(of: active) { _, newValue in
             UIAccessibility.post(notification: .announcement, argument: newValue ? "Started dictating" : "Stopped dictating")
