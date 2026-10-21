@@ -135,6 +135,7 @@ struct ModelPackList: View {
                     Button { choose(entry.id) } label: {
                         Label(entry.name, systemImage: active == entry.id ? "checkmark.circle.fill" : "circle")
                     }
+                    .buttonStyle(.borderless)
                     .accessibilityHint("Switches to this model")
                     Spacer()
                     Button("Remove", systemImage: "trash", role: .destructive) {
