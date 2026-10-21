@@ -1,3 +1,4 @@
+import KitUI
 import SwiftUI
 
 /// The editable list of rules: sound (with count and time window) plus from-state → to-state and an action.
@@ -60,7 +61,7 @@ struct RuleEditor: View {
             Section("Do") {
                 Picker("Action", selection: $rule.action) { ForEach(FlowAction.allCases, id: \.self) { Text($0.title).tag($0) } }
             }
-            Toggle("Enabled", isOn: $rule.enabled)
+            WordToggle(title: "Enabled", isOn: $rule.enabled)
         }
         .navigationTitle("Rule")
         .navigationBarTitleDisplayMode(.inline)

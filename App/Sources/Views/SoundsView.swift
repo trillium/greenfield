@@ -1,3 +1,4 @@
+import KitUI
 import ParrotKit
 import ParrotKitUI
 import SwiftUI
@@ -132,8 +133,8 @@ struct PhraseList: View {
     var body: some View {
         Group {
             ForEach($phrases) { $phrase in
-                HStack {
-                    Toggle("", isOn: $phrase.enabled).labelsHidden()
+                VStack(alignment: .leading) {
+                    WordToggle(title: phrase.text.isEmpty ? "New phrase" : phrase.text, isOn: $phrase.enabled)
                     TextField("Phrase", text: $phrase.text).textInputAutocapitalization(.never).autocorrectionDisabled()
                 }
             }
