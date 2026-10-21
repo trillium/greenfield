@@ -83,6 +83,11 @@ struct DictateView: View {
 struct SubmitBar: View {
     let model: AppModel
 
+    /// Voice Control cannot read "Retry all (3)" as a count, so the spoken form keeps the same words and counts properly.
+    static func retryLabel(queued: Int) -> String {
+        queued == 1 ? "Retry all, 1 text" : "Retry all, \(queued) texts"
+    }
+
     var body: some View {
         let flow = model.flow
         let queued = model.outbox.pending.count
@@ -91,6 +96,7 @@ struct SubmitBar: View {
                 HStack {
                     Button("Retry all (\(queued))", systemImage: "arrow.clockwise") { Task { await model.delivery.resendAll() } }
                         .buttonStyle(.bordered)
+                        .accessibilityLabel(Self.retryLabel(queued: queued))
                     Spacer()
                     RetryNote(retry: model.retry)
                 }
