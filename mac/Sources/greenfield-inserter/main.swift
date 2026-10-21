@@ -18,6 +18,7 @@ usage:
                                               insert a harmless test string into that Mac's focused app
   greenfield-inserter permissions             check Accessibility; ask macOS to prompt if missing
 
+port: --port, else GREENFIELD_PORT from the environment, else GREENFIELD_PORT in the nearest .env (see .env.example)
 environment: GREENFIELD_INSERTER_HOME overrides ~/.config/greenfield-inserter
 """
 
@@ -37,10 +38,18 @@ let paths = InserterPaths.standard()
 let keys = FileKeyStore(paths: paths)
 let macName = MacName(paths: paths)
 
+/// The port from `--port`, the environment or `.env`; stops with a hint when there is none.
+func configuredPort(_ args: [String]) -> UInt16 {
+    let dotEnv = DotEnv.load(from: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
+    switch DotEnv.port(flag: option("--port", in: args), environment: ProcessInfo.processInfo.environment, dotEnv: dotEnv) {
+    case .success(let port): return port
+    case .failure(let error): fail("\(error)", code: 2)
+    }
+}
+
 switch args.first ?? "serve" {
 case "serve":
-    let port = UInt16(option("--port", in: args) ?? "47821") ?? 0
-    guard port != 0 else { fail("bad --port", code: 2) }
+    let port = configuredPort(args)
     let target: HTTPServer.BindTarget = option("--bind", in: args).map { .address($0) } ?? .tailnet
     let nameOverride = option("--name", in: args)
     try? paths.ensureDirectory()
@@ -107,8 +116,7 @@ case "macs":
     switch args.dropFirst().first {
     case "add":
         guard args.count >= 4 else { fail("usage: macs add ALIAS HOST [--port N] [--key-stdin]", code: 2) }
-        let port = Int(option("--port", in: args) ?? "47821") ?? 0
-        guard port > 0, port < 65536 else { fail("bad --port", code: 2) }
+        let port = Int(configuredPort(args))
         var key: String
         if args.contains("--key-stdin") {
             key = readLine(strippingNewline: true) ?? ""

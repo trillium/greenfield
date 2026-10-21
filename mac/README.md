@@ -6,7 +6,8 @@ routes. Each Mac runs its own copy with its own key, so a client can switch betw
 
 ## HTTP API
 
-Port `47821`. Every request needs the header `X-Dictation-Key: <key>`.
+The port is `GREENFIELD_PORT` from `.env` (copy `.env.example` to `.env` first; `--port N` overrides it).
+Every request needs the header `X-Dictation-Key: <key>`.
 
 **Network policy.** Plain HTTP is used on purpose: the trust boundary is tailnet membership, plus the per-Mac
 key. The daemon listens on this Mac's tailnet address (the `100.64.0.0/10` address Tailscale assigns) and on
@@ -41,6 +42,7 @@ Only successes are remembered for de-duplication (15 minutes, 1024 ids), so a re
 ## Setup on a Mac
 
 ```
+cp .env.example .env      # the port lives here (GREENFIELD_PORT); .env is gitignored
 make -C mac test          # unit tests
 make -C mac key           # create the key; it is shown once, enter it in the phone app
 make -C mac install       # launchd agent: starts at login, restarts on crash

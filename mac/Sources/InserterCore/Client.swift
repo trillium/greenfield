@@ -8,7 +8,7 @@ public struct KnownMac: Codable, Equatable {
     public var port: Int
     public var key: String
 
-    public init(alias: String, host: String, port: Int = 47821, key: String) {
+    public init(alias: String, host: String, port: Int, key: String) {
         self.alias = alias; self.host = host; self.port = port; self.key = key
     }
 }

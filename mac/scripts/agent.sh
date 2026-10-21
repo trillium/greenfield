@@ -7,13 +7,16 @@
 #   scripts/agent.sh status      show whether launchd is running it
 #   scripts/agent.sh logs        tail the log
 #
+# The port is GREENFIELD_PORT from the environment or the repo's .env (../.env.example); PORT=N overrides it.
 # Overrides (mainly for testing): LABEL, PREFIX, PORT, GREENFIELD_INSERTER_HOME.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 LABEL="${LABEL:-local.greenfield.inserter}"
 PREFIX="${PREFIX:-$HOME/.local/share/greenfield-inserter}"
-PORT="${PORT:-47821}"
+# shellcheck source-path=SCRIPTDIR source=../../scripts/load-env.sh
+. ../scripts/load-env.sh
+PORT="${PORT:-${GREENFIELD_PORT:-}}"
 CONFIG_HOME="${GREENFIELD_INSERTER_HOME:-$HOME/.config/greenfield-inserter}"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$CONFIG_HOME/inserter.log"
@@ -21,6 +24,7 @@ DOMAIN="gui/$(id -u)"
 
 case "${1:-}" in
 install)
+    [ -n "$PORT" ] || { echo "error: no port: set GREENFIELD_PORT in .env (copy .env.example) or pass PORT=N" >&2; exit 1; }
     swift build -c release >&2
     mkdir -p "$PREFIX" "$CONFIG_HOME" "$HOME/Library/LaunchAgents"
     chmod 700 "$CONFIG_HOME"

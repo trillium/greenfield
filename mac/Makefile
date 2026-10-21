@@ -1,6 +1,7 @@
 # greenfield-inserter: receives text over the tailnet and inserts it at the cursor.
 SWIFT ?= swift
-PORT  ?= 47821
+# The port comes from GREENFIELD_PORT (environment or ../.env, see ../.env.example); PORT=N on the command line overrides it.
+PORT  ?=
 
 .PHONY: build test run key check insert-test permissions install uninstall status logs clean
 
@@ -12,7 +13,7 @@ test:
 
 # Build and run in the foreground on the tailnet address (Ctrl-C to stop).
 run: build
-	.build/release/greenfield-inserter serve --port $(PORT) --log-stderr
+	.build/release/greenfield-inserter serve $(if $(PORT),--port $(PORT)) --log-stderr
 
 # Create this Mac's key and show it once. Refuses to overwrite; use `make key FORCE=--force` to rotate.
 key: build
@@ -32,7 +33,7 @@ permissions: build
 
 # Install as a launchd agent: starts at login, restarts on crash.
 install:
-	PORT=$(PORT) scripts/agent.sh install
+	$(if $(PORT),PORT=$(PORT)) scripts/agent.sh install
 
 uninstall:
 	scripts/agent.sh uninstall
